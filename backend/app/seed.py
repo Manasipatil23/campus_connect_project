@@ -22,7 +22,7 @@ COLLEGE_DOMAIN, COMPANY_DOMAIN = "wit.edu.in", "nimbusanalytics.dev"
 
 # collections that only ever hold activity (all of it is removed by --wipe)
 ACTIVITY = ["applications", "drives", "connections", "messages", "experiences", "announcements", "issues",
-            "notifications", "updates", "change_requests", "approvals", "history", "email_codes"]
+            "notifications", "updates", "change_requests", "approvals", "history", "email_codes", "jd_files"]
 
 COLLEGE = {
     "name": "Westbridge Institute of Technology", "short": "WIT", "city": "Mumbai", "state": "Maharashtra",

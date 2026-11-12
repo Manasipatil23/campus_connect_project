@@ -10,15 +10,18 @@ Lifecycle: Draft -> Sent for review -> Needs changes / Approved -> Published -> 
     (marked "update pending confirmation") until the placement cell approves it.
   * Every change is written to the update history and the right people are notified.
 """
+import re
 import uuid
 
 from bson import ObjectId
 from bson.errors import InvalidId
-from fastapi import APIRouter, Depends, HTTPException
+from bson import Binary
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pymongo.errors import DuplicateKeyError
 
 from ..auth import active_user, require_role
 from ..db import db, serialize
+from ..documents import TYPES, extension, extract_text
 from ..ml.ats import evidence_report, extract_skills, normalize_skill, score_resume
 from ..ml.eligibility import check_eligibility, eligibility_rules
 from ..schemas import (FUNNEL, ROUND_AT_STATUS, STAGE_LABELS, TERMINAL, AssessmentIn, ChangeDecisionIn, DriveIn,
@@ -192,9 +195,41 @@ def _new_round(r: dict) -> dict:
             "history": [], "updated_at": now()}
 
 
+@router.post("/drives/jd-file")
+async def upload_jd(file: UploadFile = File(...), user: dict = Depends(managers)):
+    """Upload a JD as PDF or Word: returns its text (to fill the description) and suggested skills.
+    The file itself is kept so it can be attached to the drive for students to download."""
+    data = await file.read()
+    text = extract_text(file.filename or "", data, "job description")
+    name = (file.filename or "job-description").rsplit("/", 1)[-1][:120]
+    res = await db.jd_files.insert_one({
+        "name": name, "content_type": TYPES[extension(name)], "size": len(data), "data": Binary(data),
+        "uploaded_by": user["id"], "drive_id": None, "created_at": now()})
+    return {"file_id": str(res.inserted_id), "name": name, "size": len(data), "text": text[:20000],
+            "skills": extract_skills(text)}
+
+
+@router.get("/drives/{drive_id}/jd-file")
+async def download_jd(drive_id: str, user: dict = Depends(active_user)):
+    drive = await get_drive(drive_id)
+    _check_view(user, drive)
+    f = (drive.get("jd_file") or {}).get("id")
+    doc = await db.jd_files.find_one({"_id": oid(f)}) if f else None
+    if not doc:
+        raise HTTPException(404, "This drive has no JD file")
+    safe = re.sub(r'[^A-Za-z0-9._ -]', "_", doc["name"])
+    return Response(bytes(doc["data"]), media_type=doc["content_type"],
+                    headers={"Content-Disposition": f'attachment; filename="{safe}"'})
+
+
 @router.post("/drives")
 async def create_drive(body: DriveIn, user: dict = Depends(managers)):
-    doc = body.model_dump(exclude={"submit"})
+    doc = body.model_dump(exclude={"submit", "jd_file_id"})
+    if body.jd_file_id:
+        jd = await db.jd_files.find_one({"_id": oid(body.jd_file_id), "uploaded_by": user["id"], "drive_id": None})
+        if not jd:
+            raise HTTPException(400, "The uploaded JD file wasn't found. Upload it again.")
+        doc["jd_file"] = {"id": body.jd_file_id, "name": jd["name"], "size": jd["size"]}
     if user["role"] == "coordinator":
         doc["college_id"] = user["college_id"]
         doc["company_id"] = None
@@ -229,6 +264,8 @@ async def create_drive(body: DriveIn, user: dict = Depends(managers)):
     res = await db.drives.insert_one(doc)
     doc["_id"] = res.inserted_id
     did = str(res.inserted_id)
+    if body.jd_file_id:
+        await db.jd_files.update_one({"_id": oid(body.jd_file_id)}, {"$set": {"drive_id": did}})
     n = 0
     if status == "review":
         n = await notify(await college_staff(doc["college_id"]), "New drive to review",

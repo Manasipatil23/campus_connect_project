@@ -186,6 +186,19 @@ async def email_decision(to: Optional[str], name: str, approved: bool, what: str
     await run_in_threadpool(send_email, to, subject, text, by.get("email"), html)
 
 
+async def email_note(to: Optional[str], name: str, subject: str, body: str, by: dict) -> None:
+    """A plain message from staff to one person (replies go to the sender)."""
+    if not to:
+        return
+    from fastapi.concurrency import run_in_threadpool
+    from .config import APP_URL
+    from .email_templates import message
+    from .emailing import send_email
+    subject, text, html = message(subject, f"Hi {(name or 'there').split()[0]},", body,
+                                  f"{by.get('name')}\nCampus Connect", ("Open Campus Connect", f"{APP_URL}/login"))
+    await run_in_threadpool(send_email, to, subject, text, by.get("email"), html)
+
+
 def lpa(x) -> str:
     """12.0 -> "12 LPA", 6.5 -> "6.5 LPA" """
     try:

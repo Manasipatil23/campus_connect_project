@@ -23,11 +23,17 @@ export default function Pending() {
   const { user, signOut, refresh } = useAuth();
   const navigate = useNavigate();
   const rejected = user.status === "rejected";
+  const suspended = user.status === "suspended";
   const college = user.college;
   const company = user.company_org;
 
   let items;
-  if (user.role === "student") {
+  if (suspended) {
+    items = [
+      ["Email verified", "done", user.email],
+      ["Account on hold", "no", `Your placement cell has put your account on hold${user.review_note ? `: ${user.review_note.replace(/[.!?\s]*$/, "")}.` : "."} Contact them to get access back.`],
+    ];
+  } else if (user.role === "student") {
     const cOk = college?.status === "approved";
     items = [
       ["Email verified", "done", user.email],
@@ -55,9 +61,9 @@ export default function Pending() {
       <div className="card w-full max-w-lg p-8 sm:p-10">
         <Logo />
         <h1 className="mt-8 text-3xl font-medium tracking-[-0.03em]">
-          {rejected ? "Account not approved" : <>Almost there, <span className="accent">{user.name.split(" ")[0]}.</span></>}
+          {suspended ? "Account on hold" : rejected ? "Account not approved" : <>Almost there, <span className="accent">{user.name.split(" ")[0]}.</span></>}
         </h1>
-        <p className="mt-2 text-ink-muted">{rejected ? "Here's where things stand." : "Your account is created. Here's what happens next."}</p>
+        <p className="mt-2 text-ink-muted">{rejected || suspended ? "Here's where things stand." : "Your account is created. Here's what happens next."}</p>
         <div className="mt-8"><Steps items={items} /></div>
         <div className="mt-10 flex flex-wrap gap-3">
           <button className="btn-primary" onClick={refresh}><RefreshCw className="h-4 w-4" /> Check again</button>

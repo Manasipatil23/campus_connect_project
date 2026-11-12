@@ -8,12 +8,12 @@ from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from ..auth import require_role
 from ..db import db, serialize
-from ..schemas import ConnectIn, DecisionIn, MessageIn
-from ..workflow import CONNECTION_STATUS, email_decision, record_approval, college_staff, company_staff, log_update, notify, now
+from ..schemas import BulkDecisionIn, ConnectIn, DecisionIn, MessageIn, NameReviewIn
+from ..workflow import CONNECTION_STATUS, email_decision, email_note, record_approval, college_staff, company_staff, log_update, notify, now
 from .drives import oid
 
 router = APIRouter(prefix="/api", tags=["college", "connections"])
@@ -195,12 +195,101 @@ async def decide_student(student_id: str, body: DecisionIn, user: dict = Depends
     if not student:
         raise HTTPException(404, "Student not found at your college")
     status = "active" if body.decision == "approve" else "rejected"
-    await db.users.update_one({"_id": student["_id"]}, {"$set": {
+    changed = await db.users.update_one({"_id": student["_id"], "status": {"$ne": status}}, {"$set": {
         "status": status, "reviewed_at": datetime.now(timezone.utc), "review_note": body.note}})
+    if not changed.modified_count:  # repeated click: already decided this way, nothing more to record or email
+        return {"id": student_id, "status": status, "unchanged": True}
     await record_approval(kind="student", target_id=student_id, name=student["name"], email=student["email"],
                           decision=body.decision, by=user, note=body.note, college_id=user["college_id"])
     await email_decision(student["email"], student["name"], body.decision == "approve", "Campus Connect account", body.note, user)
     return {"id": student_id, "status": status}
+
+
+@router.post("/college/students/bulk-decision")
+async def bulk_decide(body: BulkDecisionIn, background: BackgroundTasks, user: dict = Depends(coordinator)):
+    """Approve many sign-ups at once ("everyone except these"), optionally rejecting the exceptions.
+    Only students still waiting at this college are touched; emails go out in the background."""
+    approve = set(body.approve)
+    reject = set(body.reject) - approve
+    if not approve and not reject:
+        raise HTTPException(400, "Choose at least one student")
+    ids = [oid(i) for i in approve | reject]
+    found = [s async for s in db.users.find({"_id": {"$in": ids}, "role": "student", "college_id": user["college_id"],
+                                              "status": "pending"}, {"name": 1, "email": 1})]
+    t = datetime.now(timezone.utc)
+    counts = {"approved": 0, "rejected": 0, "skipped": len(approve | reject) - len(found)}
+    for s in found:
+        sid = str(s["_id"])
+        decision = "approve" if sid in approve else "reject"
+        note = body.note if decision == "reject" else None
+        await db.users.update_one({"_id": s["_id"], "status": "pending"}, {"$set": {
+            "status": "active" if decision == "approve" else "rejected", "reviewed_at": t, "review_note": note}})
+        await record_approval(kind="student", target_id=sid, name=s["name"], email=s["email"], decision=decision,
+                              by=user, note=note, college_id=user["college_id"])
+        background.add_task(email_decision, s["email"], s["name"], decision == "approve", "Campus Connect account", note, user)
+        counts["approved" if decision == "approve" else "rejected"] += 1
+    return counts
+
+
+@router.get("/college/students/name-changes")
+async def name_changes(user: dict = Depends(coordinator)):
+    """Students whose name change the placement cell hasn't signed off yet."""
+    cur = db.users.find({"role": "student", "college_id": user["college_id"],
+                         "name_change.status": {"$in": ["pending", "asked"]}}, STUDENT_FIELDS)
+    return [serialize(s) async for s in cur.sort("name_change.at", -1)]
+
+
+@router.post("/college/students/{student_id}/name-review")
+async def review_name(student_id: str, body: NameReviewIn, background: BackgroundTasks, user: dict = Depends(coordinator)):
+    """After a student renames themselves: accept it, ask them about it, undo it, or suspend (and later
+    reactivate) the account."""
+    s = await db.users.find_one({"_id": oid(student_id), "role": "student", "college_id": user["college_id"]})
+    if not s:
+        raise HTTPException(404, "Student not found at your college")
+    nc, t, msg = s.get("name_change") or {}, now(), (body.message or "").strip()
+    sets, review = {}, {"by": user["name"], "at": t}
+    if body.action in ("ok", "revert") and nc.get("status") not in ("pending", "asked"):
+        raise HTTPException(400, "There's no name change waiting for review")
+    if body.action == "message" and len(msg) < 3:
+        raise HTTPException(400, "Write the message for the student")
+
+    if body.action == "ok":
+        sets["name_change.status"] = "ok"
+    elif body.action == "message":
+        sets["name_change.status"] = "asked" if nc.get("status") in ("pending", "asked") else nc.get("status")
+        await notify([student_id], "Message from your placement cell", msg[:300], "/profile", "message")
+        background.add_task(email_note, s["email"], s["name"], "A message from your placement cell", msg, user)
+    elif body.action == "revert":
+        sets.update({"first_name": nc["old_first_name"], "last_name": nc["old_last_name"], "name": nc["old_name"],
+                     "name_change.status": "reverted"})
+        why = msg or "It doesn't match the name in college records."
+        await notify([student_id], "Your name change was undone",
+                     f"Your name is back to {nc['old_name']}. {why}", "/profile", "message")
+    elif body.action == "suspend":
+        if s.get("status") != "active":
+            raise HTTPException(400, "Only active accounts can be suspended")
+        why = msg or "Please contact your placement cell."
+        sets.update({"status": "suspended", "review_note": why, "suspended_at": t})
+        if nc.get("status") in ("pending", "asked"):
+            sets["name_change.status"] = "suspended"
+        background.add_task(email_note, s["email"], s["name"], "Your Campus Connect account is on hold",
+                         f"Your placement cell has put your account on hold.\n\nReason: {why}\n\n"
+                         "You can't use Campus Connect until they reactivate it. Reply to this email to reach them.", user)
+    elif body.action == "reactivate":
+        if s.get("status") != "suspended":
+            raise HTTPException(400, "This account isn't suspended")
+        sets.update({"status": "active", "review_note": None})
+        await notify([student_id], "Your account is active again", msg or "Your placement cell restored your access.", "/", "message")
+    if body.action != "message" or sets.get("name_change.status"):
+        sets["name_change.review"] = review if nc else None
+    sets = {k: v for k, v in sets.items() if not (k == "name_change.review" and v is None)}
+    if sets:
+        await db.users.update_one({"_id": s["_id"]}, {"$set": sets})
+    await log_update(entity="student", entity_id=student_id, college_id=user["college_id"], action=f"name_{body.action}",
+                     summary={"ok": "Name change accepted", "message": "Placement cell messaged the student",
+                              "revert": "Name change undone", "suspend": "Account suspended",
+                              "reactivate": "Account reactivated"}[body.action], by=user)
+    return serialize(await db.users.find_one({"_id": s["_id"]}, STUDENT_FIELDS))
 
 
 # ---- connections between colleges and companies ---------------------------

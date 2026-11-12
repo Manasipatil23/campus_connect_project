@@ -158,6 +158,7 @@ class DriveIn(BaseModel):
     rounds: List[RoundIn] = []
     criteria_confirmed: bool = False  # recruiter reviewed the skills extracted from the JD
     submit: bool = False              # send straight to the placement cell for review
+    jd_file_id: Optional[str] = None  # an uploaded JD (PDF/Word) to attach for students to download
 
 
 class DrivePatch(BaseModel):
@@ -301,6 +302,22 @@ class CompanySignupIn(BaseModel):
     hr_phone: str = Field(pattern=PHONE)
     code: str = Field(min_length=6, max_length=6)
     password: str = Field(min_length=8, max_length=128)
+
+
+class BulkDecisionIn(BaseModel):
+    approve: List[str] = Field(default=[], max_length=2000)
+    reject: List[str] = Field(default=[], max_length=2000)
+    note: Optional[str] = Field(default=None, max_length=300)  # reason sent to the students not approved
+
+
+class NameIn(BaseModel):
+    first_name: str = Field(min_length=1, max_length=60)
+    last_name: str = Field(min_length=1, max_length=60)
+
+
+class NameReviewIn(BaseModel):
+    action: Literal["ok", "message", "revert", "suspend", "reactivate"]
+    message: Optional[str] = Field(default=None, max_length=500)
 
 
 class DecisionIn(BaseModel):

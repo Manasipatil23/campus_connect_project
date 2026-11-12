@@ -1,11 +1,9 @@
-import io
 from datetime import datetime, timezone
 from typing import Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from pypdf import PdfReader
 
 from ..auth import require_role
 from ..db import db, serialize
@@ -15,7 +13,8 @@ from ..ml.health import health_score
 from ..ml.insights import (assessment_insights, headline, reached, resume_insights,
                            rule_suggestions_resume)
 from ..ml.llm import personalised_suggestions, review_resume
-from ..schemas import FUNNEL, ROUND_LABELS, STAGE_LABELS, TERMINAL, OfferResponseIn, ProfileIn, ResumeTextIn
+from ..documents import extract_text
+from ..schemas import FUNNEL, ROUND_LABELS, STAGE_LABELS, TERMINAL, NameIn, OfferResponseIn, ProfileIn, ResumeTextIn
 from ..workflow import ACCEPTING, STUDENT_VISIBLE, college_staff, drive_company_staff, drive_label, log_update, notify, now
 from .drives import get_drive, oid, screening_view, student_round
 
@@ -50,24 +49,44 @@ async def update_profile(body: ProfileIn, user: dict = Depends(student_only)):
     return profile
 
 
+@router.put("/me/name")
+async def change_name(body: NameIn, user: dict = Depends(student_only)):
+    """Students may fix their name (email stays fixed). The placement cell is told and can accept it,
+    ask about it, undo it, or suspend the account."""
+    clean = lambda x: " ".join(x.split())
+    first, last = clean(body.first_name), clean(body.last_name)
+    if not first or not last:
+        raise HTTPException(400, "Enter both first and last name")
+    new = f"{first} {last}"
+    if new == user["name"]:
+        return {"name": new, "first_name": first, "last_name": last, "changed": False}
+    prev = user.get("name_change") or {}
+    # while a change is still unreviewed, "old" stays the name the placement cell last accepted
+    unreviewed = prev.get("status") in ("pending", "asked")
+    old_first = prev["old_first_name"] if unreviewed else (user.get("first_name") or user["name"].split()[0])
+    old_last = prev["old_last_name"] if unreviewed else (user.get("last_name") or " ".join(user["name"].split()[1:]))
+    old_name = prev["old_name"] if unreviewed else user["name"]
+    t = now()
+    await db.users.update_one({"_id": ObjectId(user["id"])}, {
+        "$set": {"first_name": first, "last_name": last, "name": new,
+                 "name_change": {"old_first_name": old_first, "old_last_name": old_last, "old_name": old_name,
+                                 "new_name": new, "at": t, "status": "pending"}},
+        "$push": {"name_history": {"from": user["name"], "to": new, "at": t}}})
+    if new == old_name:  # changed back to the accepted name: nothing left to review
+        await db.users.update_one({"_id": ObjectId(user["id"])}, {"$set": {"name_change.status": "ok"}})
+    else:
+        roll = f" (roll no. {user['roll_number']})" if user.get("roll_number") else ""
+        await notify(await college_staff(user["college_id"]), f"Name changed: {old_name} → {new}",
+                     f"{new}{roll} changed their name. Check it against your records: accept it, message them, "
+                     "undo it, or suspend the account.", "/students?view=names", "student")
+    return {"name": new, "first_name": first, "last_name": last, "changed": True}
+
+
 @router.post("/me/resume")
 async def upload_resume(file: UploadFile = File(...), user: dict = Depends(student_only)):
-    data = await file.read()
-    if len(data) > 5 * 1024 * 1024:
-        raise HTTPException(413, "Resume must be under 5 MB")
-    name = (file.filename or "resume").lower()
-    if name.endswith(".pdf"):
-        try:
-            reader = PdfReader(io.BytesIO(data))
-            text = "\n".join(page.extract_text() or "" for page in reader.pages)
-        except Exception:
-            raise HTTPException(400, "Could not read that PDF")
-    elif name.endswith((".txt", ".md")):
-        text = data.decode("utf-8", errors="ignore")
-    else:
-        raise HTTPException(400, "Upload a PDF or plain-text resume")
-    if len(text.strip()) < 50:
-        raise HTTPException(400, "No readable text found — is the PDF a scanned image?")
+    text = extract_text(file.filename or "", await file.read(), "resume")
+    if len(text) < 50:
+        raise HTTPException(400, "No readable text found. If it's a scanned image, upload a text PDF or Word file.")
     return await _save_resume(user, text, file.filename or "resume")
 
 

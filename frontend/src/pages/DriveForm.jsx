@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Check, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Check, FileText, Loader2, Plus, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { ErrorNote, PageHeader, useApi } from "../components/ui";
@@ -24,9 +24,32 @@ export default function DriveForm() {
   const [suggested, setSuggested] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [jd, setJd] = useState(null);          // {file_id, name, size} once uploaded
+  const [jdBusy, setJdBusy] = useState(false);
+  const jdInput = useRef(null);
   const set = (k) => (e) => { setF({ ...f, [k]: e.target.value }); if (k === "skills" || k === "preferred") setConfirmed(false); };
   const toggleBranch = (b) => setF({ ...f, branches: f.branches.includes(b) ? f.branches.filter((x) => x !== b) : [...f.branches, b] });
   const setRound = (i, k, v) => setRounds(rounds.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+
+  const uploadJd = async (file) => {
+    if (!file) return;
+    setError(null); setJdBusy(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const r = await api("/drives/jd-file", { method: "POST", form });
+      const replace = !f.description.trim() || window.confirm("Replace the job description you've typed with the text from this file?");
+      const have = new Set(f.skills.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
+      setF((cur) => ({ ...cur, description: replace ? r.text : cur.description,
+        skills: [...have, ...r.skills.filter((s) => !have.has(s))].join(", ") }));
+      setSuggested(r.skills);
+      setConfirmed(false);
+      setJd({ file_id: r.file_id, name: r.name, size: r.size });
+    } catch (e) { setError(e.message); } finally {
+      setJdBusy(false);
+      if (jdInput.current) jdInput.current.value = "";
+    }
+  };
 
   const extract = async () => {
     setError(null);
@@ -53,7 +76,7 @@ export default function DriveForm() {
           assessment_sections: f.sections.split(",").map((s) => s.trim()).filter(Boolean),
           required_skills: f.skills.split(",").map((s) => s.trim()).filter(Boolean),
           preferred_skills: f.preferred.split(",").map((s) => s.trim()).filter(Boolean),
-          criteria_confirmed: confirmed, submit: send,
+          criteria_confirmed: confirmed, submit: send, jd_file_id: jd?.file_id || null,
           rounds: rounds.filter((r) => r.name.trim()).map((r) => ({ ...r, date: r.date || null, time: r.time || null })),
           criteria: {
             min_cgpa: f.min_cgpa === "" ? null : Number(f.min_cgpa),
@@ -111,8 +134,29 @@ export default function DriveForm() {
         </div>
 
         <div>
-          <label className="label">Job description</label>
-          <textarea className="input h-36" value={f.description} onChange={set("description")} required minLength={30} />
+          <div className="mb-1.5 flex flex-wrap items-end justify-between gap-2">
+            <label className="label mb-0" htmlFor="jd-text">Job description</label>
+            <input ref={jdInput} type="file" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              className="hidden" onChange={(e) => uploadJd(e.target.files?.[0])} />
+            {!jd && (
+              <button type="button" className="btn-soft px-3 py-1.5 text-xs" disabled={jdBusy} onClick={() => jdInput.current?.click()}>
+                {jdBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                {jdBusy ? "Reading file…" : "Upload JD (PDF or Word)"}
+              </button>
+            )}
+          </div>
+          {jd && (
+            <div className="mb-2 flex items-center gap-3 rounded-xl border border-brand-100 bg-brand-50/50 px-3 py-2 text-sm">
+              <FileText className="h-4 w-4 shrink-0 text-brand-600" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium">{jd.name}</div>
+                <div className="text-xs text-ink-muted">{Math.max(1, Math.round(jd.size / 1024))} KB · attached for students to download · text copied below</div>
+              </div>
+              <button type="button" className="rounded-full p-1 text-ink-muted hover:bg-white hover:text-ink" title="Remove file" onClick={() => setJd(null)}><X className="h-4 w-4" /></button>
+            </div>
+          )}
+          <textarea id="jd-text" className="input h-36" value={f.description} onChange={set("description")} required minLength={30}
+            placeholder="Paste the JD here, or upload the PDF/Word file above to fill this in." />
         </div>
 
         <fieldset className="rounded-2xl border border-brand-100 bg-brand-50/30 p-5">

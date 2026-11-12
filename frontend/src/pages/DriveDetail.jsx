@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
-  AlertTriangle, ArrowLeft, Ban, CalendarClock, Check, CheckCircle2, ChevronRight, CircleHelp, Clock, Pencil, Plus, Search, Send, Users, X, XCircle,
+  AlertTriangle, ArrowLeft, Ban, CalendarClock, Check, CheckCircle2, ChevronRight, CircleHelp, Clock, Download, FileText, Pencil, Plus, Search, Send, Users, X, XCircle,
 } from "lucide-react";
-import { api } from "../api";
+import { api, downloadFile } from "../api";
 import { AtsBreakdown, Review } from "../components/AtsBreakdown";
 import { Badge, ErrorNote, Modal, Spinner, fmtDate, useApi } from "../components/ui";
 import { ChangeLine, ContactList, DriveFlow, HistoryPanel, StudentRound } from "../components/workflow";
@@ -89,6 +89,7 @@ function StudentView({ d, reload }) {
         <Section title="About the role">
           <Facts d={d} />
           <p className="mt-5 whitespace-pre-line text-sm leading-relaxed text-ink-soft">{d.description}</p>
+          <JdFile d={d} />
           <Skills d={d} />
         </Section>
         <Section title="Selection schedule" icon={CalendarClock}>
@@ -286,6 +287,7 @@ function StaffView({ d, reload }) {
         <Section title="Drive details" action={(d.can.edit_directly || d.can.propose) && <button className="btn-ghost px-3 py-1.5" onClick={() => setModal("edit")}><Pencil className="h-3.5 w-3.5" /> {d.can.propose ? "Propose a change" : "Edit"}</button>}>
           <Facts d={d} />
           <p className="mt-5 whitespace-pre-line text-sm leading-relaxed text-ink-soft">{d.description}</p>
+          <JdFile d={d} />
           <Skills d={d} />
           <div className="mt-4 text-xs text-ink-muted">
             Screening criteria {d.criteria_confirmed ? <span className="text-emerald-700">confirmed by the recruiter</span> : <span className="text-amber-700">not confirmed yet</span>} · Owner {d.owner_name || "—"}
@@ -372,6 +374,23 @@ function StaffView({ d, reload }) {
         <div className="mt-4 flex justify-end"><button className={modal?.status === "cancelled" ? "btn bg-rose-600 text-white hover:bg-rose-700" : "btn-primary"}
           onClick={() => run(() => api(`/drives/${d.id}/status`, { method: "POST", body: { status: modal.status, reason: note || null } }), "Drive status updated.")}>Confirm</button></div>
       </Modal>
+    </div>
+  );
+}
+
+/** The original JD file (PDF/Word), when one was uploaded with the drive. */
+function JdFile({ d }) {
+  const [err, setErr] = useState(null);
+  if (!d.jd_file) return null;
+  return (
+    <div className="mt-4">
+      <button type="button" onClick={() => downloadFile(`/drives/${d.id}/jd-file`, d.jd_file.name).catch((e) => setErr(e.message))}
+        className="inline-flex max-w-full items-center gap-2 rounded-xl border border-black/[.08] bg-white px-3 py-2 text-sm hover:border-brand-200 hover:bg-brand-50/40">
+        <FileText className="h-4 w-4 shrink-0 text-brand-600" />
+        <span className="truncate">{d.jd_file.name}</span>
+        <Download className="h-4 w-4 shrink-0 text-ink-muted" />
+      </button>
+      {err && <p className="mt-1 text-xs text-rose-600">{err}</p>}
     </div>
   );
 }

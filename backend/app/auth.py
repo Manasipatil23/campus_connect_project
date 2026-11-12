@@ -50,6 +50,8 @@ async def active_user(user: dict = Depends(current_user)) -> dict:
     recruiters are approved when the platform admin approves their college or
     company. Pending users can still call /auth/me to see their status.
     """
+    if user.get("status", "active") == "suspended":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Your placement cell has put your account on hold")
     if user.get("status", "active") != "active":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Your account is awaiting approval")
     return user

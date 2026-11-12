@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Award, BookOpen, CheckCircle2, X, FileText, GraduationCap, Layers, Mail, Phone, Search, UserCheck, XCircle } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { ArrowRight, Award, BookOpen, CheckCircle2, X, FileText, GraduationCap, Layers, Mail, MessageSquare, Pause, Phone, Play, Search, Undo2, UserCheck, XCircle } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { Empty, ErrorNote, PageHeader, Spinner, Stat, Tabs, ago, useApi, fmtDate, plural } from "../components/ui";
@@ -231,14 +232,96 @@ function Overview({ onApprovals }) {
   );
 }
 
+const NAME_ACTIONS = {
+  message: { label: "Message", icon: MessageSquare, prompt: "Message to the student (sent as a notification and email)", button: "Send message", needsText: true },
+  revert: { label: "Undo change", icon: Undo2, prompt: "Why are you undoing it? (shown to the student, optional)", button: "Undo name change" },
+  suspend: { label: "Suspend", icon: Pause, prompt: "Reason for suspending (emailed to the student, optional)", button: "Suspend account", danger: true },
+};
+
+/** Students who renamed themselves: accept, ask, undo, or suspend. */
+function NameChanges({ onChanged }) {
+  const { data, error, reload } = useApi("/college/students/name-changes");
+  const [open, setOpen] = useState(null);   // {id, action}
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [done, setDone] = useState(null);
+  const act = async (s, action, message) => {
+    setErr(null); setBusy(true);
+    try {
+      await api(`/college/students/${s.id}/name-review`, { method: "POST", body: { action, message: message || null } });
+      setDone({ ok: `Accepted ${s.name}'s new name.`, message: `Message sent to ${s.name}.`, revert: `Changed back to ${s.name_change.old_name}.`,
+        suspend: `${s.name}'s account is suspended. Find it under Sign-ups & approvals → Suspended.` }[action]);
+      setOpen(null); setText(""); reload(); onChanged?.();
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  if (!data) return error ? <ErrorNote>{error}</ErrorNote> : <Spinner />;
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-ink-muted">Students can change their name but not their email. Check each new name against your records.</p>
+      {done && <div className="rounded-xl bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">{done}</div>}
+      <ErrorNote>{err}</ErrorNote>
+      {data.length === 0 ? <div className="card"><Empty>No name changes to review.</Empty></div> : data.map((s) => {
+        const a = open?.id === s.id ? NAME_ACTIONS[open.action] : null;
+        return (
+          <div key={s.id} className="card p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2 text-base">
+                  <span className="text-ink-muted line-through">{s.name_change.old_name}</span>
+                  <ArrowRight className="h-4 w-4 text-ink-muted" />
+                  <span className="font-medium">{s.name_change.new_name}</span>
+                  {s.name_change.status === "asked" && <span className="chip bg-amber-50 text-amber-700">You messaged them</span>}
+                </div>
+                <div className="mt-1 text-xs text-ink-muted">
+                  {[s.roll_number && `Roll ${s.roll_number}`, s.profile?.branch, s.profile?.grad_year && `Batch ${s.profile.grad_year}`, s.email].filter(Boolean).join(" · ")} · changed {ago(s.name_change.at)}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button className="rounded-full bg-ink px-3 py-1.5 text-xs font-medium text-white hover:bg-black disabled:opacity-40" disabled={busy} onClick={() => act(s, "ok")}>
+                  <CheckCircle2 className="mr-1 inline h-3.5 w-3.5" />Looks fine
+                </button>
+                {Object.entries(NAME_ACTIONS).map(([k, x]) => (
+                  <button key={k} disabled={busy} onClick={() => { setOpen(open?.id === s.id && open.action === k ? null : { id: s.id, action: k }); setText(""); setErr(null); }}
+                    className={`rounded-full px-3 py-1.5 text-xs font-medium disabled:opacity-40 ${open?.id === s.id && open.action === k ? "bg-black/[.06]" : ""} ${x.danger ? "text-rose-600 hover:bg-rose-50" : "text-ink-soft hover:bg-black/[.04]"}`}>
+                    <x.icon className="mr-1 inline h-3.5 w-3.5" />{x.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {a && (
+              <div className="mt-4 space-y-2 border-t border-black/[.06] pt-4">
+                <label className="label">{a.prompt}</label>
+                <textarea className="input h-20 text-sm" value={text} onChange={(e) => setText(e.target.value)} maxLength={500} autoFocus
+                  placeholder={open.action === "message" ? "e.g. Your new name doesn't match your marksheet. Please share a document that shows it." : ""} />
+                <div className="flex gap-2">
+                  <button className={`${a.danger ? "rounded-full bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700" : "btn-primary px-4 py-2 text-sm"} disabled:opacity-40`}
+                    disabled={busy || (a.needsText && text.trim().length < 3)} onClick={() => act(s, open.action, text.trim())}>{busy ? "Saving…" : a.button}</button>
+                  <button className="btn-ghost px-4 py-2 text-sm" onClick={() => setOpen(null)}>Cancel</button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function CollegeStudents() {
   const { user } = useAuth();
-  const [view, setView] = useState("overview");
+  const [params, setParams] = useSearchParams();
+  const [view, setViewState] = useState(() => (["overview", "approvals", "names"].includes(params.get("view")) ? params.get("view") : "overview"));
+  const setView = (v) => { setViewState(v); setParams(v === "overview" ? {} : { view: v }, { replace: true }); };
+  const { data: renamed, reload: reloadRenamed } = useApi("/college/students/name-changes");
   const [status, setStatus] = useState("pending");
   const [q, setQ] = useState("");
   const { data, error, setData } = useApi(`/college/students?status=${status}`);
   const { data: pending, reload: reloadPending } = useApi("/college/students?status=pending");
   const [err, setErr] = useState(null);
+  const [left, setLeft] = useState(() => new Set());   // pending students unticked = left out of the bulk action
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkDone, setBulkDone] = useState(null);
   const list = useMemo(() => (data || []).filter((s) => `${s.name} ${s.email} ${s.roll_number} ${s.profile?.branch}`.toLowerCase().includes(q.toLowerCase())), [data, q]);
 
   const decide = async (s, decision) => {
@@ -255,36 +338,99 @@ export default function CollegeStudents() {
     } catch (e) { setErr(e.message); }
   };
 
+  const reactivate = async (s) => {
+    setErr(null);
+    try {
+      await api(`/college/students/${s.id}/name-review`, { method: "POST", body: { action: "reactivate" } });
+      setData(data.filter((x) => x.id !== s.id));
+    } catch (e) { setErr(e.message); }
+  };
+  const bulk = status === "pending" && list.length > 1;
+  const included = bulk ? list.filter((s) => !left.has(s.id)) : [];
+  const excluded = bulk ? list.filter((s) => left.has(s.id)) : [];
+  const toggle = (id) => setLeft((cur) => { const n = new Set(cur); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAll = () => setLeft(excluded.length ? new Set() : new Set(list.map((s) => s.id)));
+  const runBulk = async (decision) => {
+    const targets = decision === "approve" ? included : excluded;
+    if (!targets.length) return;
+    let note = null;
+    if (decision === "reject") {
+      note = window.prompt(`Reason for not approving these ${plural(targets.length, "student")} (emailed to them):`, "Details don't match our records");
+      if (note === null) return;
+    }
+    setErr(null); setBulkBusy(true); setBulkDone(null);
+    try {
+      const ids = targets.map((s) => s.id);
+      const r = await api("/college/students/bulk-decision", { method: "POST", body: decision === "approve" ? { approve: ids } : { reject: ids, note } });
+      const gone = new Set(ids);
+      setData(data.filter((x) => !gone.has(x.id)));
+      setLeft(new Set());
+      setBulkDone(r);
+      reloadPending();
+    } catch (e) { setErr(e.message); } finally { setBulkBusy(false); }
+  };
+
   return (
     <>
       <PageHeader eyebrow={user.college?.name} title="Your" accent="students."
         subtitle={view === "overview" ? "Your student body by branch, batch and CGPA, straight from student records." : "Students sign up with a verified email and your college. Check their roll number and details, then approve them."} />
-      <div className="mb-6"><Tabs value={view} onChange={setView} options={[["overview", "Overview"], ["approvals", `Sign-ups & approvals${pending?.length ? ` (${pending.length})` : ""}`]]} /></div>
-      {view === "overview" ? <Overview onApprovals={() => { setView("approvals"); setStatus("pending"); }} /> : <>
+      <div className="mb-6"><Tabs value={view} onChange={setView} options={[["overview", "Overview"], ["approvals", `Sign-ups & approvals${pending?.length ? ` (${pending.length})` : ""}`],
+        ["names", `Name changes${renamed?.length ? ` (${renamed.length})` : ""}`]]} /></div>
+      {view === "names" ? <NameChanges onChanged={reloadRenamed} /> : view === "overview" ? <Overview onApprovals={() => { setView("approvals"); setStatus("pending"); }} /> : <>
       <div className="mb-6 flex flex-wrap items-center gap-3">
-        <Tabs value={status} onChange={setStatus} options={[["pending", `Waiting${pending ? ` (${pending.length})` : ""}`], ["active", "Approved"], ["rejected", "Not approved"]]} />
+        <Tabs value={status} onChange={setStatus} options={[["pending", `Waiting${pending ? ` (${pending.length})` : ""}`], ["active", "Approved"], ["rejected", "Not approved"], ["suspended", "Suspended"]]} />
         <div className="relative w-full max-w-xs">
           <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
           <input className="input pl-10" placeholder="Search name, roll number, branch" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
       </div>
       <ErrorNote>{err || error}</ErrorNote>
+      {bulkDone && (
+        <div className="mb-3 rounded-xl bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
+          {bulkDone.approved > 0 && `Approved ${plural(bulkDone.approved, "student")}. `}
+          {bulkDone.rejected > 0 && `${plural(bulkDone.rejected, "student")} not approved. `}
+          {bulkDone.skipped > 0 && `${plural(bulkDone.skipped, "student")} skipped (already decided). `}
+          Everyone gets an email.
+        </div>
+      )}
+      {bulk && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-brand-100 bg-brand-50/40 px-4 py-3 text-sm">
+          <div className="min-w-0 flex-1">
+            <div className="font-medium">Approve everyone except the ones you untick</div>
+            <div className="text-xs text-ink-muted">
+              {excluded.length ? `${plural(included.length, "student")} ticked · ${excluded.length} left out` : `All ${plural(list.length, "student")}${q ? " matching your search" : ""} are ticked. Untick anyone whose details don't check out.`}
+            </div>
+          </div>
+          {excluded.length > 0 && (
+            <button className="rounded-full px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-40" disabled={bulkBusy} onClick={() => runBulk("reject")}>
+              <XCircle className="mr-1 inline h-3.5 w-3.5" />Reject the {excluded.length} left out
+            </button>
+          )}
+          <button className="btn-primary px-4 py-2 text-sm" disabled={bulkBusy || !included.length} onClick={() => runBulk("approve")}>
+            <CheckCircle2 className="h-4 w-4" />{bulkBusy ? "Saving…" : `Approve ${included.length}`}
+          </button>
+        </div>
+      )}
       <div className="card mt-2 overflow-x-auto">
         {!data ? <Spinner /> : list.length === 0 ? <Empty>{status === "pending" ? "No sign-ups waiting. New students appear here after they verify their email." : "No students here."}</Empty> : (
-          <table className="w-full min-w-[760px] text-sm [&_td]:px-3 [&_th]:px-3">
+          <table className="w-full min-w-[540px] text-sm [&_td]:px-3 [&_th]:px-3">
             <thead className="border-b border-black/[.06] text-left text-xs text-ink-muted">
-              <tr><th className="py-3 pl-6">Student</th><th>Roll no.</th><th>Branch</th><th>Year</th><th>Contact</th><th>Signed up</th><th className="pr-6 text-right">{status === "pending" ? "Decision" : ""}</th></tr>
+              <tr>{bulk && <th className="w-10 py-3 pl-6"><input type="checkbox" aria-label="Tick or untick everyone" className="h-4 w-4 accent-brand-700"
+                checked={!excluded.length} ref={(el) => { if (el) el.indeterminate = excluded.length > 0 && included.length > 0; }} onChange={toggleAll} /></th>}
+                <th className={bulk ? "py-3" : "py-3 pl-6"}>Student</th><th>Roll no.</th><th>Branch · batch</th><th>Contact</th><th className="pr-6 text-right">{status === "pending" ? "Decision" : status === "suspended" ? "Action" : ""}</th></tr>
             </thead>
             <tbody className="divide-y divide-black/[.05]">
               {list.map((s) => (
-                <tr key={s.id} className="hover:bg-brand-50/30">
-                  <td className="py-4 pl-6"><div className="font-medium">{s.name}</div>{s.review_note && status === "rejected" && <div className="text-xs text-rose-600">{s.review_note}</div>}</td>
+                <tr key={s.id} className={`hover:bg-brand-50/30 ${bulk && left.has(s.id) ? "bg-black/[.02] text-ink-muted" : ""}`}>
+                  {bulk && <td className="py-4 pl-6"><input type="checkbox" aria-label={`Include ${s.name}`} className="h-4 w-4 accent-brand-700" checked={!left.has(s.id)} onChange={() => toggle(s.id)} /></td>}
+                  <td className={bulk ? "py-4" : "py-4 pl-6"}><div className="min-w-[9rem] font-medium">{s.name}</div><div className="text-xs text-ink-muted">Signed up {s.created_at ? fmtDate(s.created_at) : "—"}</div>{s.review_note && ["rejected", "suspended"].includes(status) && <div className="text-xs text-rose-600">{s.review_note}</div>}</td>
                   <td className="font-mono text-xs">{s.roll_number}</td>
-                  <td>{s.profile?.branch}</td>
-                  <td>{s.profile?.grad_year}</td>
+                  <td className="whitespace-nowrap">{[s.profile?.branch, s.profile?.grad_year].filter(Boolean).join(" · ")}</td>
                   <td className="text-xs text-ink-muted"><div className="flex items-center gap-1"><Mail className="h-3 w-3" />{s.email}</div>{s.phone && <div className="flex items-center gap-1"><Phone className="h-3 w-3" />{s.phone}</div>}</td>
-                  <td className="text-xs text-ink-muted">{s.created_at ? fmtDate(s.created_at) : "—"}</td>
                   <td className="whitespace-nowrap py-4 pr-6 text-right">
+                    {status === "suspended" && (
+                      <button className="rounded-full bg-ink px-3 py-1.5 text-xs font-medium text-white hover:bg-black" onClick={() => reactivate(s)}><Play className="mr-1 inline h-3.5 w-3.5" />Reactivate</button>
+                    )}
                     {status === "pending" && <>
                       <button className="rounded-full px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50" onClick={() => decide(s, "reject")}><XCircle className="mr-1 inline h-3.5 w-3.5" />Reject</button>
                       <button className="rounded-full bg-ink px-3 py-1.5 text-xs font-medium text-white hover:bg-black" onClick={() => decide(s, "approve")}><CheckCircle2 className="mr-1 inline h-3.5 w-3.5" />Approve</button>

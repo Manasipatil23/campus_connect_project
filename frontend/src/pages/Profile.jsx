@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  BookOpen, Briefcase, Check, Code, ExternalLink, Github, Globe, GraduationCap, Link2, Linkedin, Phone, Plus, Sparkles, X,
+  BookOpen, Briefcase, Check, Code, ExternalLink, Github, Globe, GraduationCap, Link2, Linkedin, Pencil, Phone, Plus, Sparkles, X,
 } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
@@ -59,6 +59,52 @@ function SkillInput({ skills, onChange }) {
         <input className="min-w-[10rem] flex-1 bg-transparent px-1.5 py-1 text-sm outline-none" value={draft} placeholder={skills.length ? "Add another…" : "python, sql, react…"}
           onChange={(e) => setDraft(e.target.value)} onBlur={add}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(); } else if (e.key === "Backspace" && !draft && skills.length) onChange(skills.slice(0, -1)); }} />
+      </div>
+    </div>
+  );
+}
+
+/** Students can fix their own name; the email stays fixed. The placement cell is notified. */
+function NameEditor({ user, refresh }) {
+  const split = () => ({ first: user.first_name || user.name.split(" ")[0], last: user.last_name || user.name.split(" ").slice(1).join(" ") });
+  const [edit, setEdit] = useState(false);
+  const [n, setN] = useState(split);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [err, setErr] = useState(null);
+  const save = async () => {
+    setErr(null); setBusy(true);
+    try {
+      const r = await api("/students/me/name", { method: "PUT", body: { first_name: n.first, last_name: n.last } });
+      await refresh();
+      setEdit(false);
+      setMsg(r.changed ? "Name updated. Your placement cell has been told." : null);
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const enter = (e) => { if (e.key === "Enter") { e.preventDefault(); save(); } if (e.key === "Escape") setEdit(false); };
+  if (!edit) {
+    return (
+      <>
+        <div className="mt-3 flex items-center gap-2">
+          <h1 className="text-xl font-medium tracking-tight">{user.name}</h1>
+          <button type="button" title="Edit your name" onClick={() => { setN(split()); setMsg(null); setEdit(true); }}
+            className="rounded-full p-1.5 text-ink-muted hover:bg-black/[.04] hover:text-ink"><Pencil className="h-3.5 w-3.5" /></button>
+        </div>
+        {msg && <p className="mt-1 text-xs text-emerald-700">{msg}</p>}
+      </>
+    );
+  }
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <input className="input px-3 py-2 text-sm" aria-label="First name" value={n.first} onChange={(e) => setN({ ...n, first: e.target.value })} onKeyDown={enter} autoFocus maxLength={60} />
+        <input className="input px-3 py-2 text-sm" aria-label="Last name" value={n.last} onChange={(e) => setN({ ...n, last: e.target.value })} onKeyDown={enter} maxLength={60} />
+      </div>
+      <p className="text-xs text-ink-muted">Use your name as it appears in college records. Your placement cell is notified of the change.</p>
+      {err && <p className="text-xs text-rose-600">{err}</p>}
+      <div className="flex gap-2">
+        <button type="button" className="btn-primary px-3 py-1.5 text-xs" disabled={busy || !n.first.trim() || !n.last.trim()} onClick={save}><Check className="h-3.5 w-3.5" />{busy ? "Saving…" : "Save name"}</button>
+        <button type="button" className="btn-ghost px-3 py-1.5 text-xs" onClick={() => setEdit(false)}>Cancel</button>
       </div>
     </div>
   );
@@ -128,7 +174,7 @@ export default function Profile() {
           <div className="h-20 bg-gradient-to-br from-brand-200 via-brand-100 to-white" />
           <div className="-mt-10 px-6 pb-6">
             <span className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-ink text-2xl font-medium text-white">{initials}</span>
-            <h1 className="mt-3 text-xl font-medium tracking-tight">{user.name}</h1>
+            <NameEditor user={user} refresh={refresh} />
             <p className="text-sm text-ink-muted">{user.college?.name}</p>
             <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
               {f.branch && <span className="chip bg-black/[.04] text-ink-soft">{f.branch}</span>}
@@ -223,7 +269,7 @@ export default function Profile() {
 
         <Section icon={Phone} title="Contact" hint="Shared with your placement cell">
           <div className="grid gap-4 sm:grid-cols-2">
-            <div><label className="label">Email</label><input className="input bg-black/[.02] text-ink-muted" value={user.email} disabled /></div>
+            <div><label className="label">Email</label><input className="input bg-black/[.02] text-ink-muted" value={user.email} disabled /><p className="mt-1 text-xs text-ink-muted">Your sign-in email can't be changed.</p></div>
             <div><label className="label">Phone</label><input className="input" value={f.phone} onChange={set("phone")} /></div>
           </div>
         </Section>

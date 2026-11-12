@@ -67,7 +67,11 @@ async def _decide(coll: str, user_field: str, org_id: str, body: DecisionIn, adm
         if not body.tier and not org.get("tier"):
             raise HTTPException(400, "Assign a tier (1, 2 or 3) when approving a college")
         update["tier"] = body.tier or org.get("tier")
-    await db[coll].update_one({"_id": org["_id"]}, {"$set": update})
+    # only the request that actually changes the status counts: a double-click or retry must not
+    # record the approval (or email the decision) twice
+    changed = await db[coll].update_one({"_id": org["_id"], "status": {"$ne": status}}, {"$set": update})
+    if not changed.modified_count:
+        return {"id": org_id, "status": status, "unchanged": True}
     # the college's placement officer / company's HR become active (or stay locked out)
     await db.users.update_many({user_field: org_id, "role": {"$in": ["coordinator", "recruiter"]}},
                                {"$set": {"status": "active" if status == "approved" else "rejected"}})
