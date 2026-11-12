@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, BadgeCheck, Building2, GraduationCap, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, Building2, GraduationCap, ShieldCheck } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import Logo from "../components/Logo";
@@ -48,7 +48,12 @@ export function AuthShell({ title, accent, subtitle, children, wide, mode }) {
       </aside>
       <div className="relative isolate flex flex-col overflow-hidden px-5 py-6 sm:px-10">
         <div aria-hidden className="grid-squares absolute inset-0 -z-10" />
-        <Link to="/" className="w-fit xl:hidden"><Logo /></Link>
+        <div className="flex items-center justify-between gap-3">
+          <Link to="/" className="w-fit xl:hidden"><Logo /></Link>
+          <Link to="/" className="group ml-auto inline-flex items-center gap-1.5 rounded-full border border-black/[.08] bg-white/80 px-4 py-2 text-sm text-ink-soft shadow-soft transition hover:border-brand-200 hover:text-ink">
+            <ArrowLeft className="h-4 w-4 transition group-hover:-translate-x-0.5" /> Back to home
+          </Link>
+        </div>
         <div className={`mx-auto flex w-full flex-1 flex-col justify-center py-10 ${wide ? "max-w-2xl" : "max-w-md"}`}>
           {mode && <div className="mx-auto w-full max-w-md"><AuthSwitch mode={mode} /></div>}
           <h1 className="text-4xl font-medium tracking-[-0.03em]">{title} <span className="accent">{accent}</span></h1>

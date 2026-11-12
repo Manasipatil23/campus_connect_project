@@ -2,12 +2,18 @@
 from datetime import datetime, timezone
 
 from bson import ObjectId
+from collections import Counter
+from datetime import timedelta
+from typing import Dict, List, Literal, Optional
+
+from pydantic import BaseModel, Field
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import require_role
 from ..db import db, serialize
 from ..schemas import ConnectIn, DecisionIn, MessageIn
-from ..workflow import CONNECTION_STATUS, college_staff, company_staff, log_update, notify, now
+from ..workflow import CONNECTION_STATUS, record_approval, college_staff, company_staff, log_update, notify, now
 from .drives import oid
 
 router = APIRouter(prefix="/api", tags=["college", "connections"])
@@ -23,6 +29,166 @@ async def college_students(status: str = "pending", user: dict = Depends(coordin
     return [serialize(s) async for s in cur.sort("created_at", -1)]
 
 
+ACTIVE_DAYS, QUIET_DAYS = 7, 30
+
+
+def _aware(d):
+    return d if d is None or d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
+def activity(s: dict) -> str:
+    """active: used the site in the last 7 days · quiet: 8-30 days · inactive: longer, or never since approval."""
+    seen, approved = _aware(s.get("last_seen_at") or s.get("last_login_at")), _aware(s.get("reviewed_at"))
+    if not seen or (approved and seen < approved):
+        return "inactive"
+    days = (now() - seen).days
+    return "active" if days <= ACTIVE_DAYS else "quiet" if days <= QUIET_DAYS else "inactive"
+
+
+class EnrolmentIn(BaseModel):
+    grad_year: int = Field(ge=2020, le=2035)
+    branches: Dict[str, int]
+
+
+@router.put("/college/enrolment")
+async def set_enrolment(body: EnrolmentIn, user: dict = Depends(coordinator)):
+    """Official number of students per branch for a batch (from the college's own records)."""
+    branches = {b.strip(): int(n) for b, n in body.branches.items() if b.strip()}
+    if any(n < 0 or n > 5000 for n in branches.values()):
+        raise HTTPException(400, "Each branch needs a number between 0 and 5000")
+    await db.colleges.update_one({"_id": oid(user["college_id"])}, {"$set": {
+        f"enrolment.{body.grad_year}": {"branches": branches, "updated_at": now(), "updated_by": user["name"]}}})
+    return {"grad_year": body.grad_year, "branches": branches, "total": sum(branches.values())}
+
+
+@router.get("/college/student-stats")
+async def student_stats(grad_year: Optional[int] = None, user: dict = Depends(coordinator)):
+    """The college's student body, from the student records themselves: totals, branch by branch,
+    batches and CGPA spread. Approved students only (sign-ups waiting are counted separately)."""
+    base = {"role": "student", "college_id": user["college_id"]}
+    counts = {s: await db.users.count_documents({**base, "status": s}) for s in ("active", "pending", "rejected")}
+    batches = Counter()
+    async for u in db.users.find({**base, "status": "active"}, {"profile.grad_year": 1}):
+        batches[(u.get("profile") or {}).get("grad_year")] += 1
+    q = {**base, "status": "active"}
+    if grad_year:
+        q["profile.grad_year"] = grad_year
+    students = await db.users.find(q, {"profile": 1, "placement": 1, "resume.updated_at": 1, "last_seen_at": 1,
+                                       "last_login_at": 1, "reviewed_at": 1}).to_list(None)
+    college = await db.colleges.find_one({"_id": oid(user["college_id"])}, {"enrolment": 1})
+    pending_by_branch = Counter()
+    async for u in db.users.find({**base, "status": "pending", **({"profile.grad_year": grad_year} if grad_year else {})},
+                                 {"profile.branch": 1}):
+        pending_by_branch[(u.get("profile") or {}).get("branch") or "Not set"] += 1
+    # official numbers: the chosen batch, or all batches added together
+    enrolled = Counter()
+    for y, e in ((college or {}).get("enrolment") or {}).items():
+        if not grad_year or str(grad_year) == str(y):
+            enrolled.update(e.get("branches", {}))
+
+    def summarise(group):
+        n = len(group)
+        cgpas = [s["profile"]["cgpa"] for s in group if (s.get("profile") or {}).get("cgpa") is not None]
+        placed = sum(1 for s in group if (s.get("placement") or {}).get("status") == "placed")
+        return {
+            "students": n, "placed": placed, "placement_rate": round(100 * placed / n, 1) if n else 0,
+            "avg_cgpa": round(sum(cgpas) / len(cgpas), 2) if cgpas else None,
+            "with_backlogs": sum(1 for s in group if ((s.get("profile") or {}).get("backlogs") or 0) > 0),
+            "resumes": sum(1 for s in group if s.get("resume")),
+            "profiles_incomplete": n - len(cgpas),
+            # a common recruiter bar: CGPA 7+ and no active backlogs
+            "ready_pool": sum(1 for s in group if ((s.get("profile") or {}).get("cgpa") or 0) >= 7
+                              and not (s.get("profile") or {}).get("backlogs")),
+            **{k: sum(1 for s in group if activity(s) == k) for k in ("active", "quiet", "inactive")},
+        }
+
+    by_branch = {}
+    for s in students:
+        by_branch.setdefault((s.get("profile") or {}).get("branch") or "Not set", []).append(s)
+    for b in enrolled:
+        by_branch.setdefault(b, [])
+    branches = sorted(({"branch": b, **summarise(g), "enrolled": enrolled.get(b), "pending": pending_by_branch.get(b, 0)}
+                       for b, g in by_branch.items()), key=lambda r: -(r["enrolled"] or r["students"]))
+
+    bands = [("Below 6", 0, 6), ("6 – 7", 6, 7), ("7 – 8", 7, 8), ("8 – 9", 8, 9), ("9+", 9, 11)]
+    cg = [(s.get("profile") or {}).get("cgpa") for s in students]
+    cgpa_bands = [{"band": label, "students": sum(1 for c in cg if c is not None and lo <= c < hi)} for label, lo, hi in bands]
+
+    return {
+        "counts": counts,
+        "batches": sorted(({"grad_year": y, "students": n} for y, n in batches.items() if y), key=lambda r: r["grad_year"]),
+        "grad_year": grad_year,
+        "totals": {**summarise(students), "branches": len(branches),
+                   "enrolled": sum(enrolled.values()) or None, "pending": sum(pending_by_branch.values())},
+        "enrolment": {y: e for y, e in ((college or {}).get("enrolment") or {}).items()},
+        "branches": branches,
+        "cgpa_bands": cgpa_bands,
+    }
+
+
+@router.get("/college/students/activity")
+async def student_activity(state: str = "inactive", branch: Optional[str] = None, user: dict = Depends(coordinator)):
+    """Approved students by how recently they used Campus Connect."""
+    q = {"role": "student", "college_id": user["college_id"], "status": "active"}
+    if branch:
+        q["profile.branch"] = branch
+    rows = []
+    async for s in db.users.find(q, {"name": 1, "email": 1, "roll_number": 1, "profile.branch": 1, "last_seen_at": 1,
+                                     "last_login_at": 1, "reviewed_at": 1, "last_reminded_at": 1}).sort("name", 1):
+        a = activity(s)
+        if state == "all" or a == state or (state == "needs_nudge" and a != "active"):
+            rows.append({"id": str(s["_id"]), "name": s["name"], "email": s["email"], "roll_number": s.get("roll_number"),
+                         "branch": (s.get("profile") or {}).get("branch"), "activity": a,
+                         "last_seen_at": s.get("last_seen_at") or s.get("last_login_at"),
+                         "last_reminded_at": s.get("last_reminded_at")})
+    return rows
+
+
+class RemindIn(BaseModel):
+    student_ids: List[str] = Field(default=[], max_length=500)
+    audience: Optional[Literal["quiet", "inactive", "needs_nudge"]] = None
+    message: Optional[str] = Field(default=None, max_length=1000)
+
+
+@router.post("/college/students/remind")
+async def remind_students(body: RemindIn, user: dict = Depends(coordinator)):
+    """Email (and notify in the app) students who haven't been using Campus Connect.
+    Each student gets at most one reminder a day; replies go to the placement officer."""
+    from fastapi.concurrency import run_in_threadpool
+    from ..email_templates import message as email_message
+    from ..emailing import EMAIL_DEV_MODE, send_email
+    q = {"role": "student", "college_id": user["college_id"], "status": "active"}
+    if body.student_ids:
+        q["_id"] = {"$in": [oid(i) for i in body.student_ids]}
+    elif not body.audience:
+        raise HTTPException(400, "Choose students or a group to remind")
+    college = await db.colleges.find_one({"_id": oid(user["college_id"])}, {"name": 1})
+    cutoff = now() - timedelta(hours=24)
+    sent = skipped = failed = 0
+    async for s in db.users.find(q):
+        a = activity(s)
+        if body.audience and not (a == body.audience or (body.audience == "needs_nudge" and a != "active")):
+            continue
+        if _aware(s.get("last_reminded_at")) and _aware(s["last_reminded_at"]) > cutoff:
+            skipped += 1
+            continue
+        first = s.get("first_name") or s["name"].split()[0]
+        text = (body.message or "Placement drives, round dates and results are posted on Campus Connect. "
+                "Please sign in, keep your profile and resume up to date, and check what's open for you.")
+        subj, mail, html = email_message(
+            f"{college['name']} placement cell: please check Campus Connect", f"Hi {first},", text,
+            f"{user['name']}\n{user.get('designation') or 'Placement cell'}, {college['name']}",
+            ("Open Campus Connect", "http://localhost:5173/login"))
+        result = await run_in_threadpool(send_email, s["email"], subj, mail, user["email"], html)
+        if result == "failed":
+            failed += 1
+            continue
+        await notify([str(s["_id"])], "Reminder from your placement cell", text[:140], "/", "announcement")
+        await db.users.update_one({"_id": s["_id"]}, {"$set": {"last_reminded_at": now()}})
+        sent += 1
+    return {"sent": sent, "skipped_recently_reminded": skipped, "failed": failed, "email_dev_mode": EMAIL_DEV_MODE}
+
+
 @router.post("/college/students/{student_id}/decision")
 async def decide_student(student_id: str, body: DecisionIn, user: dict = Depends(coordinator)):
     student = await db.users.find_one({"_id": oid(student_id), "role": "student", "college_id": user["college_id"]})
@@ -31,6 +197,8 @@ async def decide_student(student_id: str, body: DecisionIn, user: dict = Depends
     status = "active" if body.decision == "approve" else "rejected"
     await db.users.update_one({"_id": student["_id"]}, {"$set": {
         "status": status, "reviewed_at": datetime.now(timezone.utc), "review_note": body.note}})
+    await record_approval(kind="student", target_id=student_id, name=student["name"], email=student["email"],
+                          decision=body.decision, by=user, note=body.note, college_id=user["college_id"])
     return {"id": student_id, "status": status}
 
 
@@ -104,7 +272,7 @@ async def request_connection(body: ConnectIn, user: dict = Depends(org_member)):
     me = await _org_name(user)
     receivers = await (company_staff(key["company_id"]) if by == "college" else college_staff(key["college_id"]))
     await notify(receivers, "New connection request", f"{me} wants to connect" + (f": “{body.message}”" if body.message else ""),
-                 "/connect", "connection")
+                 "/inbox", "connection")
     await log_update(entity="connection", entity_id=str(doc["_id"]), college_id=key["college_id"], company_id=key["company_id"],
                      action="requested", summary=f"Connection requested by {me}", by=user)
     return serialize(doc)

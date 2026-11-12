@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BarChart3, Bell, Briefcase, FileText, Handshake, Inbox, LayoutDashboard, LifeBuoy, LogOut, Megaphone, Menu, MessageSquareQuote, PlusCircle, ShieldCheck, User, Users, X } from "lucide-react";
+import { BarChart3, Bell, Briefcase, Building2, Landmark, FileText, Handshake, Inbox, LayoutDashboard, LifeBuoy, LogOut, Megaphone, Menu, MessageSquareQuote, PlusCircle, ShieldCheck, User, Users, X } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import Logo from "./Logo";
@@ -91,7 +91,9 @@ const NAV = {
     { to: "/profile", label: "College profile", icon: User },
   ],
   admin: [
-    { to: "/", label: "Approvals", icon: ShieldCheck, end: true },
+    { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
+    { to: "/approvals/colleges", label: "College approvals", icon: Landmark },
+    { to: "/approvals/companies", label: "Company approvals", icon: Building2 },
   ],
 };
 const ROLE_LABEL = { student: "Student", recruiter: "Company", coordinator: "Placement cell", admin: "Admin" };

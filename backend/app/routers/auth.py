@@ -155,11 +155,16 @@ async def login(body: LoginIn):
     user = await db.users.find_one({"email": body.email.lower()})
     if not user or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(401, "Incorrect email or password")
+    now = datetime.now(timezone.utc)
+    await db.users.update_one({"_id": user["_id"]}, {"$set": {"last_login_at": now, "last_seen_at": now},
+                                                      "$inc": {"login_count": 1}})
     return await _session(user)
 
 
 @router.get("/auth/me")
 async def me(user: dict = Depends(current_user)):
+    # the app calls this on every visit, so it doubles as "last active"
+    await db.users.update_one({"_id": ObjectId(user["id"])}, {"$set": {"last_seen_at": datetime.now(timezone.utc)}})
     return await with_org(user)
 
 

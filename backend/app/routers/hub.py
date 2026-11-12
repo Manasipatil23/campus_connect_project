@@ -60,7 +60,7 @@ async def pending_actions(user: dict = Depends(active_user)):
         async for d in db.drives.find({"college_id": cid, "status": {"$in": ["approved", "published", "in_progress"]},
                                        "rounds": {"$elemMatch": {"status": "planned", "date": {"$ne": None}}}}):
             add("schedule", "Confirm round dates", drive_label(d), f"/drives/{d['_id']}")
-        add("connection", "Connection requests", "Companies waiting for your answer", "/connect",
+        add("connection", "Connection requests", "Companies waiting for your answer", "/inbox",
             await db.connections.count_documents({"college_id": cid, "status": "pending", "requested_by": "company"}))
         add("issue", "Student issues", "Open or in progress", "/inbox?tab=issues",
             await db.issues.count_documents({"college_id": cid, "status": {"$in": ["open", "in_progress"]}}))
@@ -79,7 +79,7 @@ async def pending_actions(user: dict = Depends(active_user)):
         for d in live:
             n = await db.applications.count_documents({"drive_id": str(d["_id"]), "status": "applied"})
             add("screen", "Applications to screen", drive_label(d), f"/drives/{d['_id']}/candidates", n)
-        add("connection", "Connection requests", "Colleges waiting for your answer", "/connect",
+        add("connection", "Connection requests", "Colleges waiting for your answer", "/inbox",
             await db.connections.count_documents({"company_id": user.get("company_id"), "status": "pending", "requested_by": "college"}))
         add("waiting", "Waiting on placement cells", "Changes you proposed", "/inbox",
             await db.change_requests.count_documents({"company_id": user.get("company_id"), "status": "pending"}))

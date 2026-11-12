@@ -12,3 +12,5 @@ pypdf==5.1.0
 python-dotenv==1.0.1
 anthropic
 httpx  # test client
+certifi
+dnspython  # needed for mongodb+srv:// (Atlas) links

@@ -21,7 +21,11 @@ SMTP_HOST = os.getenv("SMTP_HOST", "")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-SMTP_FROM = os.getenv("SMTP_FROM", "Campus Connect <no-reply@campusconnect.dev>")
+# most providers (Gmail included) only send "From" the account you log in with
+SMTP_FROM = os.getenv("SMTP_FROM") or (f"Campus Connect <{SMTP_USER}>" if SMTP_USER else "Campus Connect <no-reply@campusconnect.dev>")
 EMAIL_DEV_MODE = not SMTP_HOST
 # Reject email domains that have no mail server (DNS MX/A lookup)
 CHECK_EMAIL_DELIVERABILITY = os.getenv("CHECK_EMAIL_DELIVERABILITY", "true").lower() == "true"
+
+# Where the website lives; used for links in emails (sign-in, copy-code)
+APP_URL = os.getenv("APP_URL", "http://localhost:5173").rstrip("/")

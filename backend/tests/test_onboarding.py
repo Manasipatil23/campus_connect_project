@@ -1,16 +1,24 @@
 """End-to-end onboarding: college signup -> admin approval -> student signup -> TPO approval
 -> company connects -> drive -> shared experience. Run: CHECK_EMAIL_DELIVERABILITY=false python -m tests.test_onboarding
 (uses the local database and removes what it creates)."""
+import os
+
+os.environ["SMTP_HOST"] = ""  # tests never send real email (dev mode)
+
 from bson import ObjectId
 from fastapi.testclient import TestClient
 from pymongo import MongoClient
 
+from app.config import DB_NAME, MONGO_URL
+from app.db import client_options
 from app.main import app
+from tests import fixtures
 
 
 def run():
-    db = MongoClient()["campus_connect"]
+    db = MongoClient(MONGO_URL, **client_options(MONGO_URL))[DB_NAME]
     col_id = None
+    since = fixtures.started()
     H = lambda t: {"Authorization": f"Bearer {t}"}
 
     def check(r, expect, label):
@@ -37,6 +45,9 @@ def run():
             adm = c.post("/api/auth/login", json={"email": "admin@campusconnect.dev", "password": "admin123"}).json()["token"]
             check(c.post(f"/api/admin/colleges/{col_id}/decision", json={"decision": "approve"}, headers=H(adm)), 400, "admin: tier required")
             check(c.post(f"/api/admin/colleges/{col_id}/decision", json={"decision": "approve", "tier": 2}, headers=H(adm)), 200, "admin: college approved")
+            entry = db.approvals.find_one({"kind": "college", "target_id": col_id})
+            assert entry and entry["decision"] == "approved" and entry["tier"] == 2 and entry["email"] == "tpo@testinst.edu.in"
+            print("  ok  mongodb: college approval stored in `approvals`")
             check(c.get("/api/college/students", headers=H(tpo)), 200, "college: TPO active after approval")
 
             check(c.post("/api/auth/send-code", json={"email": "stu@gmail.com", "kind": "student", "college_id": col_id}), 400, "student: must use college domain")
@@ -48,6 +59,11 @@ def run():
             check(c.get("/api/drives", headers=H(st)), 403, "student: pending locked out")
             sid = c.get("/api/college/students", headers=H(tpo)).json()[0]["id"]
             check(c.post(f"/api/college/students/{sid}/decision", json={"decision": "approve"}, headers=H(tpo)), 200, "college: approves student")
+            entry = db.approvals.find_one({"kind": "student", "target_id": sid})
+            assert entry and entry["decision"] == "approved" and entry["email"] == "riya@student.testinst.edu.in" and entry["decided_by"]["role"] == "coordinator"
+            print("  ok  mongodb: student approval stored in `approvals`")
+            assert db.users.find_one({"email": "riya@student.testinst.edu.in"})["status"] == "active"
+            print("  ok  mongodb: student record saved and marked active")
             check(c.get("/api/drives", headers=H(st)), 200, "student: active")
 
             rec = c.post("/api/auth/login", json={"email": "recruiter@campusconnect.dev", "password": "recruiter123"}).json()["token"]
@@ -67,9 +83,11 @@ def run():
             db.colleges.delete_one({"_id": ObjectId(col_id)})
             db.users.delete_many({"college_id": col_id})
             db.connections.delete_many({"college_id": col_id})
+            db.approvals.delete_many({"$or": [{"target_id": col_id}, {"college_id": col_id}]})
             db.drives.delete_many({"college_id": col_id})
         db.experiences.delete_many({"company": "Some Co"})
         db.email_codes.delete_many({})
+        fixtures.reset(db, since)
     print("all onboarding checks passed")
 
 

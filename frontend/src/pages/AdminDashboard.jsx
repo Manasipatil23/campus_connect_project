@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Building2, CheckCircle2, ExternalLink, GraduationCap, Handshake, Mail, MessageSquareQuote, Phone, ShieldCheck, XCircle } from "lucide-react";
+import { Link } from "react-router-dom";
+import { ArrowRight, Building2, CheckCircle2, ExternalLink, GraduationCap, Handshake, Mail, MessageSquareQuote, Phone, ShieldCheck, XCircle } from "lucide-react";
 import { api } from "../api";
 import { Reveal } from "../components/fx/motion";
-import { Empty, ErrorNote, Modal, PageHeader, Spinner, Stat, Tabs, useApi } from "../components/ui";
+import { Empty, ErrorNote, Modal, PageHeader, Spinner, Stat, Tabs, ago, useApi } from "../components/ui";
 
 function Detail({ label, value, href }) {
   if (!value) return null;
@@ -93,32 +94,30 @@ function DecideForm({ org, kind, decision, onDone, onCancel }) {
   );
 }
 
-export default function AdminDashboard() {
+/** Approval queue for one kind of organisation: its own section in the admin sidebar. */
+export function AdminApprovals({ kind }) {
   const { data: o, reload: reloadOverview } = useApi("/admin/overview");
-  const [kind, setKind] = useState("college");
   const [status, setStatus] = useState("pending");
   const { data, error, reload } = useApi(`/admin/${kind === "college" ? "colleges" : "companies"}?status=${status}`);
   const [deciding, setDeciding] = useState(null);
+  const counts = o ? (kind === "college" ? o.colleges : o.companies) : null;
+  const isCollege = kind === "college";
 
   return (
     <>
-      <PageHeader eyebrow="Platform admin" title="Verify the" accent="network." subtitle="Colleges and companies can only use Campus Connect once you approve them." />
-      {o && (
-        <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-6">
-          <Stat label="Colleges waiting" value={o.colleges.pending} icon={Building2} />
-          <Stat label="Companies waiting" value={o.companies.pending} icon={Handshake} />
-          <Stat label="Verified colleges" value={o.colleges.approved} icon={ShieldCheck} />
-          <Stat label="Verified companies" value={o.companies.approved} icon={ShieldCheck} />
-          <Stat label="Active students" value={o.students} hint={`${o.pending_students} awaiting their college`} icon={GraduationCap} />
-          <Stat label="Experiences" value={o.experiences} hint={`${o.connections} connections`} icon={MessageSquareQuote} />
-        </div>
-      )}
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <Tabs value={kind} onChange={setKind} options={[["college", `Colleges${o ? ` (${o.colleges.pending})` : ""}`], ["company", `Companies${o ? ` (${o.companies.pending})` : ""}`]]} />
-        <Tabs value={status} onChange={setStatus} options={[["pending", "Waiting"], ["approved", "Approved"], ["rejected", "Rejected"]]} />
+      <PageHeader eyebrow="Platform admin" title={isCollege ? "College" : "Company"} accent="approvals."
+        subtitle={isCollege
+          ? "Check the AISHE code, NAAC grade and official domain, then assign a tier. The placement officer can use Campus Connect once approved."
+          : "Check the CIN or GSTIN and the work email domain. The company's HR can connect with colleges once approved."} />
+      <div className="mb-6">
+        <Tabs value={status} onChange={setStatus} options={[
+          ["pending", `Waiting${counts ? ` (${counts.pending})` : ""}`],
+          ["approved", `Approved${counts ? ` (${counts.approved})` : ""}`],
+          ["rejected", `Rejected${counts ? ` (${counts.rejected})` : ""}`],
+        ]} />
       </div>
       <ErrorNote>{error}</ErrorNote>
-      {!data ? <Spinner /> : data.length === 0 ? <div className="card"><Empty>Nothing {status === "pending" ? "waiting for review" : status} here.</Empty></div> : (
+      {!data ? <Spinner /> : data.length === 0 ? <div className="card"><Empty>{status === "pending" ? `No ${isCollege ? "colleges" : "companies"} waiting for review.` : `No ${status} ${isCollege ? "colleges" : "companies"}.`}</Empty></div> : (
         <div className="grid gap-6 xl:grid-cols-2">
           {data.map((org, i) => <Reveal key={org.id} delay={i * 60}><OrgCard org={org} kind={kind} status={status} onDecide={(org2, decision) => setDeciding({ org: org2, decision })} /></Reveal>)}
         </div>
@@ -127,6 +126,73 @@ export default function AdminDashboard() {
         {deciding && <DecideForm org={deciding.org} kind={kind} decision={deciding.decision} onCancel={() => setDeciding(null)}
           onDone={() => { setDeciding(null); reload(); reloadOverview(); }} />}
       </Modal>
+    </>
+  );
+}
+
+function QueueCard({ to, icon: Icon, title, waiting, approved, rejected }) {
+  return (
+    <Link to={to} className="card group flex flex-col p-6 transition hover:border-brand-200">
+      <div className="flex items-center gap-3">
+        <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-50"><Icon className="h-5 w-5 text-brand-600" /></span>
+        <h2 className="text-lg font-medium">{title}</h2>
+        <ArrowRight className="ml-auto h-5 w-5 text-ink-muted transition group-hover:translate-x-1 group-hover:text-ink" />
+      </div>
+      <div className="mt-6 grid grid-cols-3 gap-3 text-center">
+        <div className={`rounded-xl px-3 py-3 ${waiting ? "bg-amber-50" : "bg-black/[.03]"}`}><div className={`text-2xl font-medium tabular-nums ${waiting ? "text-amber-700" : ""}`}>{waiting}</div><div className="text-xs text-ink-muted">waiting</div></div>
+        <div className="rounded-xl bg-emerald-50 px-3 py-3"><div className="text-2xl font-medium tabular-nums text-emerald-700">{approved}</div><div className="text-xs text-ink-muted">approved</div></div>
+        <div className="rounded-xl bg-black/[.03] px-3 py-3"><div className="text-2xl font-medium tabular-nums">{rejected}</div><div className="text-xs text-ink-muted">rejected</div></div>
+      </div>
+      <span className="mt-5 text-sm font-medium text-brand-700">{waiting ? `Review ${waiting} waiting` : "Nothing waiting"}</span>
+    </Link>
+  );
+}
+
+function RecentDecisions() {
+  const { data } = useApi("/admin/approvals?limit=8");
+  if (!data) return null;
+  const KIND = { college: "College", company: "Company", student: "Student" };
+  return (
+    <section className="card mt-6 p-6">
+      <div className="mb-4 flex items-baseline justify-between gap-3">
+        <h2 className="font-medium">Recent decisions</h2>
+        <span className="text-xs text-ink-muted">Each one is saved in MongoDB (approvals collection)</span>
+      </div>
+      {data.length === 0 ? <p className="text-sm text-ink-muted">No approvals or rejections yet.</p> : (
+        <ul className="divide-y divide-black/[.05]">
+          {data.map((a) => (
+            <li key={a.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3 text-sm first:pt-0 last:pb-0">
+              <span className={`chip ${a.decision === "approved" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-600"}`}>{a.decision}</span>
+              <span className="font-medium">{a.name}</span>
+              <span className="text-ink-muted">{KIND[a.kind]}{a.tier ? ` · Tier ${a.tier}` : ""}</span>
+              {a.email && <span className="text-ink-muted">{a.email}</span>}
+              <span className="ml-auto text-xs text-ink-muted">by {a.decided_by?.name} · {ago(a.decided_at)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+export default function AdminDashboard() {
+  const { data: o } = useApi("/admin/overview");
+  return (
+    <>
+      <PageHeader eyebrow="Platform admin" title="Verify the" accent="network." subtitle="Colleges and companies can only use Campus Connect once you approve them." />
+      {!o ? <Spinner /> : <>
+        <div className="mb-6 grid gap-6 lg:grid-cols-2">
+          <QueueCard to="/approvals/colleges" icon={Building2} title="College approvals" waiting={o.colleges.pending} approved={o.colleges.approved} rejected={o.colleges.rejected} />
+          <QueueCard to="/approvals/companies" icon={Handshake} title="Company approvals" waiting={o.companies.pending} approved={o.companies.approved} rejected={o.companies.rejected} />
+        </div>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <Stat label="Active students" value={o.students} hint={`${o.pending_students} awaiting their college`} icon={GraduationCap} />
+          <Stat label="Drives" value={o.drives} icon={ShieldCheck} />
+          <Stat label="Connections" value={o.connections} hint="College–company" icon={Handshake} />
+          <Stat label="Experiences" value={o.experiences} icon={MessageSquareQuote} />
+        </div>
+        <RecentDecisions />
+      </>}
     </>
   );
 }

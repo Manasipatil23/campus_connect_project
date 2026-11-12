@@ -75,8 +75,9 @@ async def overview(user: dict = Depends(require_role("coordinator"))):
         health_rows.append({"id": str(s["_id"]), "name": s["name"], "email": s["email"],
                             "branch": s.get("profile", {}).get("branch"), "cgpa": s.get("profile", {}).get("cgpa"),
                             "ats_score": ats, "applications": len(apps_by_student[str(s["_id"])]), **h})
-    bands = Counter(r["band"] for r in health_rows)
-    at_risk = sorted((r for r in health_rows if r["band"] == "At risk"), key=lambda r: r["score"])
+    scored = [r for r in health_rows if r.get("ready")]
+    bands = Counter(r["band"] for r in scored)
+    at_risk = sorted((r for r in scored if r["band"] == "At risk"), key=lambda r: r["score"])
 
     # applications per week
     weekly = Counter(a["applied_at"].strftime("%Y-W%W") for a in apps if a.get("applied_at"))
@@ -91,7 +92,7 @@ async def overview(user: dict = Depends(require_role("coordinator"))):
             "highest_ctc": max(ctcs) if ctcs else 0,
             "open_drives": sum(d.get("status") in ("published", "in_progress") for d in drives),
             "applications": len(apps),
-            "avg_health": round(statistics.mean(r["score"] for r in health_rows)) if health_rows else 0,
+            "avg_health": round(statistics.mean(r["score"] for r in scored)) if scored else None,
         },
         "funnel": _funnel(apps),
         "dropoff": [{"round": ROUND_LABELS[k], "count": n} for k, n in
@@ -102,7 +103,7 @@ async def overview(user: dict = Depends(require_role("coordinator"))):
         "health_bands": [{"band": b, "count": bands.get(b, 0)} for b in ("Strong", "Moderate", "At risk")],
         "at_risk": at_risk[:15],
         "weekly_applications": [{"week": w, "count": n} for w, n in sorted(weekly.items())][-12:],
-        "model": {"trained_on": model.trained_on, "train_accuracy": model.accuracy},
+        "model": {"ready": model.ready, "trained_on": model.trained_on, "train_accuracy": model.accuracy},
         "drive_status": [{"status": k, "count": n} for k, n in Counter(d.get("status") for d in drives).most_common()],
         "companies": _company_rows(drives, apps),
         "branch_applications": _branch_apps(apps),

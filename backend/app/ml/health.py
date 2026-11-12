@@ -84,6 +84,11 @@ model = PlacementModel()
 
 
 def health_score(profile: dict, ats_score: float, applications: List[dict]) -> dict:
+    """Placement odds need a model trained on real past outcomes. Until there is enough
+    history, say so instead of inventing a number."""
+    if not model.ready:
+        return {"ready": False, "score": None, "band": "Not enough data yet", "placement_probability": None,
+                "activity": round(min(1.0, len(applications) / 5) * 100), "drivers": []}
     x = features_of(profile, ats_score)
     prob = model.probability(x)
 
@@ -97,6 +102,7 @@ def health_score(profile: dict, ats_score: float, applications: List[dict]) -> d
     score = round(100 * (0.6 * prob + 0.2 * (ats_score or 0) / 100 + 0.2 * activity))
     band = "Strong" if score >= 70 else "Moderate" if score >= 45 else "At risk"
     return {
+        "ready": True,
         "score": score,
         "band": band,
         "placement_probability": round(prob, 3),

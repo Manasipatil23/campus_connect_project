@@ -12,6 +12,7 @@ import hashlib
 import logging
 import secrets
 import smtplib
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 
@@ -60,18 +61,40 @@ def _hash(code: str) -> str:
     return hashlib.sha256(code.encode()).hexdigest()
 
 
-def _send(to: str, code: str) -> None:
-    msg = EmailMessage()
-    msg["Subject"] = f"{code} is your Campus Connect verification code"
-    msg["From"] = SMTP_FROM
-    msg["To"] = to
-    msg.set_content(f"Your Campus Connect verification code is {code}.\n\nIt expires in 10 minutes. "
-                    "If you didn't request it, you can ignore this email.")
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as s:
+def _smtp():
+    """Port 465 uses SSL from the start; other ports (usually 587) upgrade with STARTTLS."""
+    if SMTP_PORT == 465:
+        s = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=15)
+    else:
+        s = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15)
         s.starttls()
-        if SMTP_USER:
-            s.login(SMTP_USER, SMTP_PASSWORD)
+    if SMTP_USER:
+        s.login(SMTP_USER, SMTP_PASSWORD)
+    return s
+
+
+def _deliver(to: str, subject: str, text: str, html: str = None, reply_to: str = None) -> None:
+    msg = EmailMessage()
+    msg["Subject"], msg["From"], msg["To"] = subject, SMTP_FROM, to
+    if reply_to:
+        msg["Reply-To"] = reply_to
+    msg.set_content(text)
+    if html:
+        msg.add_alternative(html, subtype="html")
+        from .email_templates import LOGO_CID
+        if f"cid:{LOGO_CID}" in html:
+            # the logo travels inside the email, so it shows without loading remote images
+            logo = (Path(__file__).parent / "assets" / "logo-email.png").read_bytes()
+            msg.get_payload()[1].add_related(logo, maintype="image", subtype="png", cid=f"<{LOGO_CID}>",
+                                             filename="campus-connect.png")
+    with _smtp() as s:
         s.send_message(msg)
+
+
+def _send(to: str, code: str) -> None:
+    from .email_templates import verification_code
+    subject, text, html = verification_code(code, int(CODE_TTL.total_seconds() // 60), to)
+    _deliver(to, subject, text, html)
 
 
 async def issue_code(email: str) -> dict:
@@ -108,3 +131,20 @@ async def consume_code(email: str, code: str) -> None:
         await db.email_codes.update_one({"_id": rec["_id"]}, {"$inc": {"attempts": 1}})
         raise HTTPException(400, "Incorrect verification code")
     await db.email_codes.delete_one({"_id": rec["_id"]})
+
+
+def _send_message(to: str, subject: str, body: str, reply_to: str = None, html: str = None) -> None:
+    _deliver(to, subject, body, html, reply_to)
+
+
+def send_email(to: str, subject: str, body: str, reply_to: str = None, html: str = None) -> str:
+    """Returns "sent", "logged" (dev mode: no SMTP configured) or "failed"."""
+    if EMAIL_DEV_MODE:
+        log.warning("DEV MODE — email to %s: %s", to, subject)
+        return "logged"
+    try:
+        _send_message(to, subject, body, reply_to, html)
+        return "sent"
+    except Exception as exc:  # pragma: no cover - depends on the mail server
+        log.error("Could not send email to %s: %s", to, exc)
+        return "failed"

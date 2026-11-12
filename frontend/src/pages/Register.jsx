@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, BadgeCheck, Building2, GraduationCap, Search } from "lucide-react";
 import { api } from "../api";
@@ -34,6 +34,34 @@ function useForm(init) {
   };
   return { f, setF, set, errors, validate };
 }
+// Sign-up progress kept in this browser (never the password), so "Verify my email" in the
+// email can reopen the form at the verify step with everything filled in.
+export const DRAFT_KEY = "cc-signup-draft";
+function useSignupDraft(kind, f, setF, step, setStep, emailField, verifyStep) {
+  const [params] = useSearchParams();
+  const restored = useRef(false);
+  useEffect(() => {
+    if (params.get("resume") !== "1" || restored.current) return;
+    restored.current = true;
+    try {
+      const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+      if (!d || d.kind !== kind || Date.now() - d.at > 60 * 60 * 1000) return;
+      const code = sessionStorage.getItem("cc-verify-code") || "";
+      sessionStorage.removeItem("cc-verify-code");
+      setF((x) => ({ ...x, ...d.f, code }));
+      setStep(verifyStep);
+    } catch { /* storage unavailable: start fresh */ }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (step < 1) return;
+    const { password, confirm, code, ...rest } = f; // eslint-disable-line no-unused-vars
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ kind, f: rest, email: (f[emailField] || "").trim().toLowerCase(), at: Date.now() }));
+    } catch { /* ignore */ }
+  }, [f, step]); // eslint-disable-line react-hooks/exhaustive-deps
+  return () => { try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ } };
+}
+
 const req = (label) => (v) => (String(v ?? "").trim() ? null : `${label} is required`);
 
 // ---------------------------------------------------------------- student
@@ -45,10 +73,11 @@ function StudentSignup() {
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const { f, set, errors, validate } = useForm({
+  const { f, setF, set, errors, validate } = useForm({
     college_id: "", first_name: "", last_name: "", roll_number: "", branch: "", grad_year: String(new Date().getFullYear()),
     phone: "", email: "", code: "", password: "", confirm: "",
   });
+  const clearDraft = useSignupDraft("student", f, setF, step, setStep, "email", 2);
   const college = (colleges || []).find((c) => c.id === f.college_id);
   const list = useMemo(() => (colleges || []).filter((c) => `${c.name} ${c.city} ${c.state}`.toLowerCase().includes(q.toLowerCase())), [colleges, q]);
 
@@ -69,6 +98,7 @@ function StudentSignup() {
     try {
       const { confirm, ...body } = f;
       signIn(await api("/auth/register/student", { method: "POST", body: { ...body, grad_year: Number(f.grad_year) } }));
+      clearDraft();
       navigate("/");
     } catch (err) { setError(err.message); setBusy(false); }
   };
@@ -137,6 +167,7 @@ function CollegeSignup() {
     website: "", email_domain: "", student_email_domain: "", address: "", city: "", state: "", pincode: "", phone: "",
     tpo_name: "", tpo_designation: "Training & Placement Officer", tpo_email: "", tpo_phone: "", code: "", password: "", confirm: "",
   });
+  const clearDraft = useSignupDraft("college", f, setF, step, setStep, "tpo_email", 2);
   const steps = ["Institution", "Address & web", "Placement officer", "Password"];
   const next = () => {
     if (step === 0 && !validate({
@@ -166,6 +197,7 @@ function CollegeSignup() {
       signIn(await api("/auth/register/college", { method: "POST", body: {
         ...body, aishe_code: f.aishe_code.toUpperCase(), established_year: Number(f.established_year),
         nirf_rank: f.nirf_rank ? Number(f.nirf_rank) : null, student_email_domain: f.student_email_domain || null } }));
+      clearDraft();
       navigate("/");
     } catch (err) { setError(err.message); setBusy(false); }
   };
@@ -240,6 +272,7 @@ function CompanySignup() {
     name: "", website: "", email_domain: "", industry: "", size: "", hq_city: "", cin: "", gstin: "", about: "",
     hr_name: "", hr_designation: "", hr_email: "", hr_phone: "", code: "", password: "", confirm: "",
   });
+  const clearDraft = useSignupDraft("company", f, setF, step, setStep, "hr_email", 1);
   const steps = ["Company", "Hiring contact", "Password"];
   const next = () => {
     if (step === 0 && !validate({
@@ -263,6 +296,7 @@ function CompanySignup() {
       const { confirm, ...body } = f;
       signIn(await api("/auth/register/company", { method: "POST", body: {
         ...body, cin: f.cin ? f.cin.toUpperCase() : null, gstin: f.gstin ? f.gstin.toUpperCase() : null } }));
+      clearDraft();
       navigate("/");
     } catch (err) { setError(err.message); setBusy(false); }
   };

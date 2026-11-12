@@ -1,8 +1,15 @@
+import certifi
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from .config import DB_NAME, MONGO_URL
 
-client = AsyncIOMotorClient(MONGO_URL)
+
+def client_options(url: str) -> dict:
+    """Atlas (mongodb+srv://) needs TLS; use certifi's certificates so it works on any Python install."""
+    return {"tlsCAFile": certifi.where()} if url.startswith("mongodb+srv://") or "tls=true" in url else {}
+
+
+client = AsyncIOMotorClient(MONGO_URL, serverSelectionTimeoutMS=10000, **client_options(MONGO_URL))
 db = client[DB_NAME]
 
 
@@ -20,6 +27,8 @@ async def ensure_indexes() -> None:
     await db.change_requests.create_index("drive_id")
     await db.messages.create_index([("connection_id", 1), ("at", 1)])
     await db.issues.create_index([("college_id", 1), ("updated_at", -1)])
+    await db.approvals.create_index([("decided_at", -1)])
+    await db.approvals.create_index([("kind", 1), ("target_id", 1)])
     await db.announcements.create_index([("recipient_ids", 1), ("created_at", -1)])
 
 

@@ -206,10 +206,17 @@ export function Tabs({ value, onChange, options }) {
   );
 }
 
-export const fmtDate = (d) => (d ? new Date(d.length === 10 ? d + "T00:00:00" : d).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—");
-export const fmtTime = (d) => (d ? new Date(d).toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—");
+// The API stores times in UTC but sends them without a timezone; read them as UTC, not local time.
+export function toDate(d) {
+  if (d instanceof Date) return d;
+  if (typeof d === "string" && d.length === 10) return new Date(d + "T00:00:00"); // a plain date: keep it as that day
+  if (typeof d === "string" && /T\d\d:\d\d/.test(d) && !/(Z|[+-]\d\d:?\d\d)$/.test(d)) return new Date(d + "Z");
+  return new Date(d);
+}
+export const fmtDate = (d) => (d ? toDate(d).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—");
+export const fmtTime = (d) => (d ? toDate(d).toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—");
 export function ago(d) {
-  const s = (Date.now() - new Date(d).getTime()) / 1000;
+  const s = (Date.now() - toDate(d).getTime()) / 1000;
   if (s < 60) return "just now";
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;

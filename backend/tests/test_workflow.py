@@ -5,16 +5,23 @@ connection -> drive draft -> review -> publish -> apply -> screening -> schedule
 
 Also checks the rules: students never see drafts or unconfirmed dates, hiring decisions
 belong to the company, private interviewer notes never reach students, and every change
-is in the update history. Run: python -m tests.test_workflow (needs the seeded database;
-it removes what it creates).
+is in the update history. Run: python -m tests.test_workflow (needs only the demo logins;
+it creates its own data and removes it afterwards).
 """
+import os
+
+os.environ["SMTP_HOST"] = ""  # tests never send real email (dev mode)
+
 from datetime import date, timedelta
 
 from bson import ObjectId
 from fastapi.testclient import TestClient
 from pymongo import MongoClient
 
+from app.config import DB_NAME, MONGO_URL
+from app.db import client_options
 from app.main import app
+from tests import fixtures
 
 H = lambda t: {"Authorization": f"Bearer {t}"}
 
@@ -26,8 +33,9 @@ def check(r, expect, label):
 
 
 def run():
-    db = MongoClient()["campus_connect"]
+    db = MongoClient(MONGO_URL, **client_options(MONGO_URL))[DB_NAME]
     drive_id = None
+    since, created_conn = fixtures.started(), None
     try:
         with TestClient(app) as c:
             login = lambda e, p: c.post("/api/auth/login", json={"email": e, "password": p}).json()["token"]
@@ -35,8 +43,11 @@ def run():
             tpo = login("tpo@campusconnect.dev", "tpo123")
             stu = login("student@campusconnect.dev", "student123")
             college_id = c.get("/api/auth/me", headers=H(tpo)).json()["college_id"]
+            company_id = c.get("/api/auth/me", headers=H(rec)).json()["company_id"]
+            created_conn = fixtures.ensure_connection(db, college_id, company_id)
+            fixtures.prepare_student(c, stu)
 
-            # 1. connection exists (seeded); messaging works both ways
+            # 1. the company and college are connected; messaging works both ways
             conn = next(x for x in c.get("/api/connections", headers=H(rec)).json() if x["college_id"] == college_id)
             assert conn["status"] == "accepted"
             check(c.post(f"/api/connections/{conn['id']}/messages", json={"text": "Planning a Data Analyst drive next week"}, headers=H(rec)), 200, "company messages college")
@@ -143,6 +154,7 @@ def run():
                 db.users.update_one({"_id": ObjectId(app_doc["student_id"])}, {"$set": {"placement": {"status": "unplaced"}}})
         db.issues.delete_many({"subject": "WF test issue"})
         db.messages.delete_many({"text": "Planning a Data Analyst drive next week"})
+        fixtures.reset(db, since, connections=[created_conn])
     print("all workflow checks passed")
 
 

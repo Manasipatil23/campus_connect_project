@@ -74,9 +74,10 @@ export default function StudentDashboard() {
           </p>
         </div>
         <Link to="/insights" className="card flex items-center gap-4 px-5 py-4 transition hover:border-brand-200">
-          <ScoreRing score={d.health.score} size={64} />
+          {d.health.ready ? <ScoreRing score={d.health.score} size={64} />
+            : <span className="flex h-16 w-16 items-center justify-center rounded-full border-[6px] border-brand-50 text-xs text-ink-muted">—</span>}
           <div className="text-sm">
-            <div className="font-medium">Placement health · {d.health.band}</div>
+            <div className="font-medium">{d.health.ready ? `Placement health · ${d.health.band}` : "Placement health: not enough data yet"}</div>
             <div className="text-ink-muted">Resume quality {d.ats_score ?? "—"}</div>
           </div>
         </Link>

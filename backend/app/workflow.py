@@ -146,3 +146,16 @@ def drive_label(drive: dict) -> str:
 
 def oid_list(ids: Iterable[str]) -> List[ObjectId]:
     return [ObjectId(i) for i in ids if ObjectId.is_valid(i)]
+
+
+async def record_approval(*, kind: str, target_id: str, name: str, email: Optional[str], decision: str,
+                          by: dict, note: Optional[str] = None, tier: Optional[int] = None,
+                          college_id: Optional[str] = None) -> dict:
+    """Store an approval decision as its own entry in the `approvals` collection:
+    who was approved or rejected, their email, by whom, when, and the note."""
+    doc = {"kind": kind, "target_id": target_id, "name": name, "email": email,
+           "decision": "approved" if decision == "approve" else "rejected", "tier": tier, "note": note,
+           "college_id": college_id, "decided_by": {"id": by["id"], "name": by.get("name"), "role": by["role"]},
+           "decided_at": now()}
+    doc["_id"] = (await db.approvals.insert_one(doc)).inserted_id
+    return doc

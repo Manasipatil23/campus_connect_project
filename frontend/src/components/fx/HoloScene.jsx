@@ -321,7 +321,7 @@ export default function HoloScene({ progress }) {
       </Panel>
 
       <Panel anchor={[0, -3.2, PH + 0.95]} show={panels} tilt={-10} width={196}>
-        <div className="mb-2 flex items-center justify-between text-[11px] font-semibold">Company portal <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[9px] text-brand-700">3 drives</span></div>
+        <div className="mb-2 flex items-center justify-between text-[11px] font-semibold">Company portal <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[9px] text-brand-700">Drives</span></div>
         {[["Software Engineer", "Shortlist"], ["Data Analyst", "Assess"], ["Backend Dev", "Interview"]].map(([r, s]) => (
           <div key={r} className="mb-1.5 flex items-center justify-between rounded-lg bg-white/80 px-2 py-1.5 text-[10px]">
             <span className="flex items-center gap-1.5"><User className="h-3 w-3 text-ink-muted" />{r}</span><span className="rounded-full bg-ink px-2 py-0.5 text-[9px] text-white">{s}</span>
@@ -333,7 +333,7 @@ export default function HoloScene({ progress }) {
         <div className="flex items-center gap-3">
           <svg width="56" height="56" viewBox="0 0 56 56"><circle cx="28" cy="28" r="23" fill="none" stroke="#efeaff" strokeWidth="6" />
             <circle cx="28" cy="28" r="23" fill="none" stroke="#7c3aed" strokeWidth="6" strokeLinecap="round" strokeDasharray={144.5} strokeDashoffset={144.5 * (1 - 0.92 * panels)} transform="rotate(-90 28 28)" />
-            <text x="28" y="32" textAnchor="middle" fontSize="13" fontWeight="600" fill="#111114">{Math.round(92 * panels)}%</text></svg>
+            <path d="M20 28.5l5.5 5.5 10.5-11" fill="none" stroke="#7c3aed" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" opacity={panels} /></svg>
           <div className="text-[11px] font-semibold leading-tight">Resume<br />match</div>
         </div>
         <div className="mt-2 flex flex-wrap gap-1 text-[9px]">
@@ -344,7 +344,7 @@ export default function HoloScene({ progress }) {
 
       <Panel anchor={[3.2, 0, PH + 0.95]} show={panels} tilt={-10} width={190}>
         <div className="text-[11px] font-semibold">Placement stats</div>
-        <div className="text-lg font-medium leading-tight">{Math.round(87 * panels)}% <span className="text-[10px] font-normal text-ink-muted">placed</span></div>
+        <div className="text-[10px] text-ink-muted">Placements over the season</div>
         <svg viewBox="0 0 160 46" className="mt-1 w-full">
           <defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#8b5cf6" stopOpacity=".45" /><stop offset="1" stopColor="#8b5cf6" stopOpacity="0" /></linearGradient></defs>
           <path d="M0,40 L20,34 L40,36 L60,26 L80,28 L100,18 L120,20 L140,8 L160,4 L160,46 L0,46Z" fill="url(#area)" />
@@ -368,9 +368,9 @@ export default function HoloScene({ progress }) {
           <div className="absolute" style={{ left: x - 140, top: y - 70 + (1 - match) * 90, width: 280, opacity: match, transform: `scale(${0.7 + 0.3 * match})`, zIndex: 40 }}>
             <div className="rounded-2xl border border-white bg-white/85 p-4 shadow-[0_30px_60px_-15px_rgba(91,33,182,.45)] backdrop-blur-xl">
               <div className="flex items-center gap-3">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-200 to-brand-500 text-xs font-semibold text-white">RS</span>
-                <div className="flex-1"><div className="text-xs font-semibold">Top matched profile</div><div className="text-[10px] text-ink-muted">Backend Developer · Orbit Fintech</div></div>
-                <span className="text-lg font-semibold text-brand-700">{Math.round(95 * match)}%</span>
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-200 to-brand-500 text-white"><User className="h-4 w-4" /></span>
+                <div className="flex-1"><div className="text-xs font-semibold">Top matched profile</div><div className="text-[10px] text-ink-muted">Backend Developer</div></div>
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700" style={{ opacity: match }}>Strong match</span>
               </div>
               <div className="mt-3 space-y-1.5 text-[10px]">
                 {[["Skill coverage", 95], ["Project experience", 82], ["Assessment fit", 88]].map(([l, v]) => (
@@ -387,7 +387,7 @@ export default function HoloScene({ progress }) {
       <div className="absolute" style={{ left: CX + 560, top: 300 - (1 - send) * 24, opacity: send, zIndex: 45 }}>
         <div className="flex items-center gap-3 rounded-2xl border border-white bg-white/90 px-4 py-3 shadow-[0_20px_50px_-12px_rgba(91,33,182,.45)] backdrop-blur-xl">
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500 text-white"><Check className="h-4 w-4" /></span>
-          <div><div className="text-xs font-semibold">Interview request sent</div><div className="text-[10px] text-emerald-700">95% profile match</div></div>
+          <div><div className="text-xs font-semibold">Interview request sent</div><div className="text-[10px] text-emerald-700">Strong profile match</div></div>
         </div>
       </div>
       <div className="absolute flex items-center gap-2 rounded-2xl border border-white bg-white/90 px-4 py-2.5 text-xs text-ink-soft shadow-[0_20px_50px_-12px_rgba(91,33,182,.35)] backdrop-blur-xl" style={{ left: CX - 560, top: 660, opacity: send, zIndex: 45 }}>

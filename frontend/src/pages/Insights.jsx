@@ -142,7 +142,7 @@ export default function Insights() {
         <div className="card p-6">
           <h2 className="font-medium">Skills your college's drives ask for</h2>
           <p className="mb-5 mt-1 text-xs text-ink-muted">Green: on your resume. Purple: missing — fill the ones open drives need first.</p>
-          <Skills rows={a.skills} />
+          {a.skills.length ? <Skills rows={a.skills} /> : <p className="text-sm text-ink-muted">No drives at your college yet. Skills appear here once companies post drives.</p>}
         </div>
         <div className="space-y-6">
           <div className="card p-6">

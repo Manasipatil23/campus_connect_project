@@ -140,7 +140,7 @@ function Hero() {
 }
 
 function Marquee({ names }) {
-  if (!names.length) return null;
+  if (names.length < 4) return null; // a ticker of one or two names looks empty
   const row = [...names, ...names];
   return (
     <section className="relative border-y border-black/[.05] bg-white/50 py-6">
@@ -165,32 +165,31 @@ function AnalyticsMock() {
     <Tilt className="glass rounded-3xl p-5 sm:p-6">
       <div className="mb-4 flex items-center justify-between">
         <div className="text-sm font-medium">Your season so far</div>
-        <span className="chip bg-brand-50 text-brand-700">Live</span>
+        <span className="chip bg-brand-50 text-brand-700">Example</span>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="space-y-2">
           <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-emerald-600">Going well</div>
-          <Row icon={TrendingUp} tone="text-emerald-600" title="Resume clears 2 of 3" sub="College avg 46%" />
-          <Row icon={TrendingUp} tone="text-emerald-600" title="Aptitude is strong" sub="72% vs 65% cleared" />
+          <Row icon={TrendingUp} tone="text-emerald-600" title="Resume gets shortlisted" sub="More often than your college" />
+          <Row icon={TrendingUp} tone="text-emerald-600" title="Aptitude is strong" sub="Above those who cleared" />
         </div>
         <div className="space-y-2">
           <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-rose-500">Going wrong</div>
-          <Row icon={TrendingDown} tone="text-rose-500" title="Coding below the cut" sub="32% vs 63% cleared" />
-          <Row icon={TrendingDown} tone="text-rose-500" title="Missing Power BI" sub="Cost you 1 shortlist" />
+          <Row icon={TrendingDown} tone="text-rose-500" title="Coding below the cut" sub="Compared with who cleared" />
+          <Row icon={TrendingDown} tone="text-rose-500" title="A required skill is missing" sub="It cost you a shortlist" />
         </div>
         <div className="space-y-2">
           <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-brand-600">Focus next</div>
-          <Row icon={Lightbulb} tone="text-brand-600" title="Practise sliding window" sub="3 open drives test it" />
-          <Row icon={Lightbulb} tone="text-brand-600" title="Quantify 4 bullets" sub="+ match on every drive" />
+          <Row icon={Lightbulb} tone="text-brand-600" title="Practise the weak section" sub="Open drives test it" />
+          <Row icon={Lightbulb} tone="text-brand-600" title="Quantify your bullets" sub="Raises every match" />
         </div>
       </div>
-      <div className="mt-5 space-y-2.5">
-        {[["SQL", 82, true], ["Python", 74, true], ["Power BI", 56, false], ["Docker", 41, false]].map(([s, v, ok]) => (
-          <div key={s} className="grid grid-cols-[80px_1fr_auto] items-center gap-3 text-xs">
-            <span className="flex items-center gap-1.5">{ok ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <X className="h-3.5 w-3.5 text-rose-500" />}{s}</span>
-            <div className="h-1.5 rounded-full bg-brand-50"><div className="h-1.5 rounded-full bg-gradient-to-r from-brand-400 to-brand-700" style={{ width: `${v}%` }} /></div>
-            <span className="text-ink-muted">{v}% of drives</span>
-          </div>
+      <div className="mt-5 flex flex-wrap gap-2 text-xs">
+        <span className="text-ink-muted">Skills your college's drives ask for:</span>
+        {[["SQL", true], ["Python", true], ["Power BI", false], ["Docker", false]].map(([sk, ok]) => (
+          <span key={sk} className={`chip gap-1 ${ok ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-600"}`}>
+            {ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}{sk}
+          </span>
         ))}
       </div>
     </Tilt>
@@ -198,9 +197,9 @@ function AnalyticsMock() {
 }
 
 const EXPERIENCES = [
-  { co: "Orbit Fintech", round: "Technical interview", q: ["Explain normalisation up to 3NF", "Design a URL shortener"], d: 4, rot: "-rotate-6" },
-  { co: "Quantix Systems", round: "Online assessment", q: ["Longest substring without repeats", "SQL: second-highest salary"], d: 3, rot: "rotate-3" },
-  { co: "Nimbus Analytics", round: "HR interview", q: ["Why Nimbus?", "Describe a team conflict"], d: 2, rot: "-rotate-1" },
+  { co: "Technical interview", round: "Example", q: ["Explain normalisation up to 3NF", "Design a URL shortener"], d: 4, rot: "-rotate-6" },
+  { co: "Online assessment", round: "Example", q: ["Longest substring without repeats", "SQL: second-highest salary"], d: 3, rot: "rotate-3" },
+  { co: "HR interview", round: "Example", q: ["Why do you want to join us?", "Describe a team conflict"], d: 2, rot: "-rotate-1" },
 ];
 
 function ExperienceStack() {
@@ -216,7 +215,6 @@ function ExperienceStack() {
             </div>
             <div className="mt-1 text-xs text-ink-muted">{e.round} · difficulty {"●".repeat(e.d)}{"○".repeat(5 - e.d)}</div>
             <ul className="mt-3 space-y-1 text-sm text-ink-soft">{e.q.map((q) => <li key={q}>— {q}</li>)}</ul>
-            <div className="mt-3 flex items-center gap-1 text-xs text-ink-muted"><ThumbsUp className="h-3.5 w-3.5" /> {12 + i * 7} found this helpful</div>
           </div>
         </Reveal>
         </div>
@@ -228,10 +226,10 @@ function ExperienceStack() {
 const SIDES = [
   { icon: Landmark, eyebrow: "For placement cells", title: "Run every drive", accent: "from one place.",
     points: ["Review and publish company drives", "Confirm dates before students see them", "Live placement numbers, no spreadsheets"],
-    stats: [["3", "drives to review"], ["2", "dates to confirm"], ["87%", "placed"]], cta: "Register your college", to: "/register?as=college" },
+    cta: "Register your college", to: "/register?as=college" },
   { icon: Building2, eyebrow: "For companies", title: "Hire from campus,", accent: "faster.",
     points: ["Connect with verified colleges", "Screen resumes against your exact JD", "Move candidates; everyone stays updated"],
-    stats: [["48", "applicants"], ["21", "shortlisted"], ["6", "offers"]], cta: "Register your company", to: "/register?as=company" },
+    cta: "Register your company", to: "/register?as=company" },
 ];
 
 const TRUST = [
@@ -284,7 +282,7 @@ export default function Landing() {
       {/* placement cells & companies: what they get, in brief */}
       <section id="colleges" className="relative mx-auto max-w-7xl px-5 pb-24 sm:px-8 sm:pb-32">
         <div className="grid gap-6 lg:grid-cols-2">
-          {SIDES.map(({ icon: Icon, eyebrow, title, accent, points, stats, cta, to }, k) => (
+          {SIDES.map(({ icon: Icon, eyebrow, title, accent, points, cta, to }, k) => (
             <Reveal key={eyebrow} delay={k * 150}>
               <div className="card flex h-full flex-col rounded-3xl p-8">
                 <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-100 to-white"><Icon className="h-5 w-5 text-brand-600" /></span>
@@ -297,14 +295,6 @@ export default function Landing() {
                     </li>
                   ))}
                 </ul>
-                <div className="mt-8 grid grid-cols-3 gap-2 rounded-2xl bg-brand-50/50 p-3">
-                  {stats.map(([v, l]) => (
-                    <div key={l} className="rounded-xl bg-white px-3 py-2.5 text-center">
-                      <div className="text-lg font-medium tabular-nums">{v}</div>
-                      <div className="text-[11px] text-ink-muted">{l}</div>
-                    </div>
-                  ))}
-                </div>
                 <Link to={to} className="mt-6 inline-flex w-fit items-center gap-1 text-sm font-medium text-brand-700 hover:underline">{cta} <ArrowRight className="h-3.5 w-3.5" /></Link>
               </div>
             </Reveal>
@@ -361,7 +351,7 @@ export default function Landing() {
       </section>
 
       {/* numbers */}
-      {stats && (
+      {stats && stats.colleges + stats.companies >= 5 && (
         <section className="mx-auto max-w-7xl px-5 pb-24 sm:px-8">
           <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
             {[["Verified colleges", stats.colleges], ["Hiring companies", stats.companies], ["Students", stats.students], ["Shared experiences", stats.experiences]].map(([l, v], i) => (

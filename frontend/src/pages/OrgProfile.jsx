@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { BadgeCheck, Building2, Check, Landmark, Lock, Mail, Phone, ShieldCheck, User, Users } from "lucide-react";
+import { ArrowRight, BadgeCheck, Building2, Check, GraduationCap, Landmark, Lock, Mail, Phone, ShieldCheck, User, Users } from "lucide-react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { ErrorNote, PageHeader, Spinner, useApi } from "../components/ui";
@@ -19,6 +20,33 @@ function Section({ icon: Icon, title, hint, children }) {
       </div>
       {children}
     </section>
+  );
+}
+
+function StudentBody() {
+  const { data } = useApi("/college/student-stats");
+  if (!data) return null;
+  const t = data.totals;
+  const max = Math.max(1, ...data.branches.map((b) => b.students));
+  return (
+    <div className="card p-6">
+      <h2 className="flex items-center gap-2 font-medium"><GraduationCap className="h-4 w-4 text-brand-600" />Student body</h2>
+      <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+        {[[t.students, "students"], [t.branches, "branches"], [data.batches.map((b) => b.grad_year).join(", ") || "—", "batch"]].map(([v, l]) => (
+          <div key={l} className="rounded-xl bg-brand-50/60 px-2 py-2.5"><div className="font-medium tabular-nums">{v}</div><div className="text-[11px] text-ink-muted">{l}</div></div>
+        ))}
+      </div>
+      <ul className="mt-4 space-y-2">
+        {data.branches.map((b) => (
+          <li key={b.branch} className="grid grid-cols-[5.5rem_1fr_2rem] items-center gap-2 text-xs">
+            <span className="truncate text-ink-soft">{b.branch}</span>
+            <div className="h-1.5 rounded-full bg-brand-50"><div className="h-1.5 rounded-full bg-brand-600" style={{ width: `${(100 * b.students) / max}%` }} /></div>
+            <span className="text-right tabular-nums">{b.students}</span>
+          </li>
+        ))}
+      </ul>
+      <Link to="/students" className="mt-4 inline-flex items-center gap-1 text-sm text-brand-700 hover:underline">Full breakdown <ArrowRight className="h-3.5 w-3.5" /></Link>
+    </div>
   );
 }
 
@@ -81,6 +109,7 @@ export default function OrgProfile() {
             </div>
           </div>
 
+          {!isCompany && <StudentBody />}
           <div className="card p-6">
             <h2 className="flex items-center gap-2 font-medium"><Lock className="h-4 w-4 text-brand-600" />Who sees your contact</h2>
             <ul className="mt-4 space-y-2.5 text-sm">

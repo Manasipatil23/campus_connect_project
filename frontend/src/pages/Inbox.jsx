@@ -1,16 +1,67 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Check, Eye, Flag, Trash2, UserCheck, X } from "lucide-react";
+import { BadgeCheck, Check, Eye, Flag, MessageSquare, Send, Trash2, UserCheck, X } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { Badge, Empty, ErrorNote, Modal, PageHeader, Spinner, Tabs, ago, fmtDate, fmtTime, useApi } from "../components/ui";
-import { ActionsPanel } from "../components/workflow";
+import { ActionsPanel, ContactList } from "../components/workflow";
 
 function val(v) {
   if (v == null) return "—";
   if (Array.isArray(v)) return v.join(", ");
   if (typeof v === "object") return v.cancel ? "Cancel round" : [v.date && fmtDate(v.date), v.time, v.venue, v.min_cgpa != null && `CGPA ≥ ${v.min_cgpa}`].filter(Boolean).join(" · ") || "—";
   return String(v);
+}
+
+/** Requests from the other side waiting for an answer, handled right here. */
+function ConnectionRequests({ isCollege, onChange }) {
+  const { data, reload } = useApi("/connections");
+  const [err, setErr] = useState(null);
+  const [done, setDone] = useState(null);
+  const incoming = (data || []).filter((c) => c.incoming && c.status === "pending");
+  if (!data || incoming.length === 0) return null;
+  const respond = async (c, decision) => {
+    setErr(null);
+    try {
+      await api(`/connections/${c.id}/decision`, { method: "POST", body: { decision } });
+      setDone(`${c.other?.name}: ${decision === "approve" ? "connected" : "declined"}`);
+      reload(); onChange?.();
+    } catch (e) { setErr(e.message); }
+  };
+  return (
+    <section className="card p-6">
+      <div className="mb-4 flex items-center gap-2">
+        <Send className="h-4 w-4 text-brand-600" />
+        <h2 className="font-medium">{incoming.length} connection request{incoming.length > 1 ? "s" : ""} waiting for you</h2>
+      </div>
+      {done && <div className="mb-3 flex items-center gap-1.5 text-sm text-emerald-700"><Check className="h-4 w-4" />{done}</div>}
+      <ErrorNote>{err}</ErrorNote>
+      <ul className="grid gap-4 md:grid-cols-2">
+        {incoming.map((c) => (
+          <li key={c.id} className="flex flex-col rounded-2xl border border-brand-100 bg-brand-50/30 p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-1.5 font-medium">{c.other?.name}<BadgeCheck className="h-4 w-4 text-brand-600" /></div>
+                <div className="text-sm text-ink-muted">
+                  {isCollege ? `${c.other?.industry || ""} · ${c.other?.hq_city || ""}` : `${c.other?.city || ""}, ${c.other?.state || ""} · Tier ${c.other?.tier ?? "—"}`}
+                </div>
+              </div>
+              <span className="whitespace-nowrap text-xs text-ink-muted">{ago(c.created_at)}</span>
+            </div>
+            {c.message && <p className="mt-3 text-sm text-ink-soft">“{c.message}”</p>}
+            {c.contacts?.length > 0 && <div className="mt-3 rounded-xl bg-white p-3"><ContactList contacts={c.contacts} /></div>}
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button className="btn-primary px-4 py-2" onClick={() => respond(c, "approve")}><Check className="h-4 w-4" /> Accept</button>
+              <button className="btn-ghost px-4 py-2" onClick={() => respond(c, "reject")}><X className="h-4 w-4" /> Decline</button>
+              <Link to={`/connect?thread=${c.id}`} className="ml-auto inline-flex items-center gap-1 text-sm text-brand-700 hover:underline">
+                <MessageSquare className="h-4 w-4" /> Ask a question{c.unread ? ` (${c.unread})` : ""}
+              </Link>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 function Changes({ canDecide }) {
@@ -163,6 +214,7 @@ export default function Inbox() {
   const isCollege = user.role === "coordinator";
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") || "todo";
+  const [actionsKey, setActionsKey] = useState(0);
   const setTab = (t) => setParams(t === "todo" ? {} : { tab: t });
   const tabs = isCollege
     ? [["todo", "To do"], ["changes", "Change requests"], ["issues", "Student issues"], ["moderation", "Moderation"]]
@@ -172,7 +224,12 @@ export default function Inbox() {
       <PageHeader eyebrow={isCollege ? user.college?.name : user.company} title="Your" accent="inbox."
         subtitle={isCollege ? "Everything that needs the placement cell: drive reviews, company changes to verify before students see them, student issues and experiences to moderate." : "What needs you, and what's waiting on placement cells."} />
       <div className="mb-6 overflow-x-auto"><Tabs value={tab} onChange={setTab} options={tabs} /></div>
-      {tab === "todo" && <ActionsPanel title="Needs your attention" />}
+      {tab === "todo" && (
+        <div className="space-y-6">
+          <ConnectionRequests isCollege={isCollege} onChange={() => setActionsKey((k) => k + 1)} />
+          <ActionsPanel key={actionsKey} title="Needs your attention" />
+        </div>
+      )}
       {tab === "changes" && <Changes canDecide={isCollege} />}
       {tab === "issues" && isCollege && <Issues />}
       {tab === "moderation" && isCollege && <Moderation />}

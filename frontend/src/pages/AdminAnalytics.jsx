@@ -26,6 +26,7 @@ export default function AdminAnalytics() {
   if (error) return <ErrorNote>{error}</ErrorNote>;
   if (!data) return <Spinner />;
   const k = data.kpis;
+  const empty = k.applications === 0 && (data.companies || []).length === 0;
 
   return (
     <>
@@ -36,10 +37,24 @@ export default function AdminAnalytics() {
         <Stat label="Avg CTC" value={`${k.avg_ctc} L`} hint={`Median ${k.median_ctc} · High ${k.highest_ctc}`} icon={IndianRupee} />
         <Stat label="Open drives" value={k.open_drives} icon={Briefcase} />
         <Stat label="Applications" value={k.applications} icon={Send} />
-        <Stat label="Avg health" value={k.avg_health} hint="Unplaced students" icon={Activity} />
+        <Stat label="Avg health" value={k.avg_health ?? "—"} hint={k.avg_health == null ? "Not enough data yet" : "Unplaced students"} icon={Activity} />
       </div>
 
       <div className="mb-8"><ActionsPanel /></div>
+      {empty ? (
+        <div className="card p-8">
+          <h2 className="text-lg font-medium">No placement activity yet</h2>
+          <p className="mt-1 max-w-2xl text-sm text-ink-muted">Charts appear here as soon as there is real data. To get started:</p>
+          <ol className="mt-5 grid gap-3 md:grid-cols-3">
+            {[["Approve your students", "Students who sign up with your college wait for you.", "/students"],
+              ["Connect with companies", "Accept requests or reach out to verified companies.", "/connect"],
+              ["Publish a drive", "Review drives companies send, or create your own.", "/drives"]].map(([t, d, to], i) => (
+              <li key={t}><Link to={to} className="block h-full rounded-2xl border border-black/[.06] p-4 transition hover:border-brand-200 hover:bg-brand-50/40">
+                <span className="text-xs text-brand-600">{i + 1}</span><div className="mt-1 font-medium">{t}</div><div className="mt-1 text-sm text-ink-muted">{d}</div></Link></li>
+            ))}
+          </ol>
+        </div>
+      ) : <>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Panel title="Placement funnel">
@@ -91,6 +106,9 @@ export default function AdminAnalytics() {
         </Panel>
 
         <Panel title="Placement Health of unplaced students">
+          {!data.model.ready ? (
+            <p className="text-sm text-ink-muted">Not enough data yet. Placement health is estimated from your college's real past placement outcomes, so it appears once a placement season has finished.</p>
+          ) : (
           <div className="flex flex-wrap items-center gap-6">
             <ResponsiveContainer width={180} height={180}>
               <PieChart>
@@ -113,6 +131,7 @@ export default function AdminAnalytics() {
               </li>
             </ul>
           </div>
+          )}
         </Panel>
 
         <Panel title="Offers by company">
@@ -180,6 +199,7 @@ export default function AdminAnalytics() {
               <tr><th className="py-2">Student</th><th>Branch</th><th className="text-right">CGPA</th><th className="text-right">ATS</th><th className="text-right">Apps</th><th className="text-right">Health</th><th className="pl-6">Biggest drag</th></tr>
             </thead>
             <tbody className="divide-y divide-black/[.05]">
+              {data.at_risk.length === 0 && <tr><td colSpan={7} className="py-6 text-center text-ink-muted">{data.model.ready ? "No students in the at-risk band." : "Not enough data yet."}</td></tr>}
               {data.at_risk.map((s) => {
                 const drag = s.drivers.find((d) => d.direction === "negative");
                 return (
@@ -198,6 +218,7 @@ export default function AdminAnalytics() {
           </table>
         </Panel>
       </div>
+      </>}
     </>
   );
 }

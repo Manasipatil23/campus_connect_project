@@ -16,7 +16,7 @@ log = logging.getLogger("campus_connect")
 async def train_model() -> None:
     rows = await db.history.find({}, {"_id": 0}).to_list(None)
     if len({r["placed"] for r in rows}) < 2:
-        log.warning("No historical outcomes to train on — run `python -m app.seed` first")
+        log.warning("No past placement outcomes yet - placement health shows 'not enough data' until there are some")
         return
     model.fit(rows)
     log.info("Placement model trained on %d past students (train acc %.3f)", model.trained_on, model.accuracy)
@@ -44,4 +44,12 @@ for r in (auth, students, drives, analytics, admin, college, experiences, hub, o
 
 @app.get("/api/health")
 async def health():
-    return {"ok": True, "model_trained_on": model.trained_on}
+    """Backend is up; also reports the MongoDB connection and what's stored."""
+    from .config import DB_NAME
+    try:
+        info = await db.client.server_info()
+        mongo = {"connected": True, "version": info.get("version"), "database": DB_NAME,
+                 "collections": {n: await db[n].estimated_document_count() for n in sorted(await db.list_collection_names())}}
+    except Exception as exc:  # pragma: no cover
+        mongo = {"connected": False, "error": str(exc)}
+    return {"ok": mongo["connected"], "mongodb": mongo, "model_trained_on": model.trained_on}

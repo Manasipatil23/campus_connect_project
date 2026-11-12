@@ -34,7 +34,6 @@ The company, placement-cell and student portals read the **same** drive and appl
 
 **Update history** (`updates` collection) records what changed, old and new value, who, which portal, when, whether it needed approval and who was notified; every drive page shows it. **Notifications** (bell in the header) are sent on events that matter to that person, not every edit. **Inbox** (`/inbox`) lists what's waiting on you. Analytics are computed from application and offer records, never hand-maintained numbers.
 
-The seed includes a drive in review, a draft, one approved and waiting to publish, one sent back for changes, a pending interview-date change (the spec's 18 → 20 Nov example), a pending CTC change, a notice, student issues and experiences awaiting moderation.
 
 **Workflow test:** `.venv/bin/python -m tests.test_workflow` walks connection → draft → review → publish → apply → screening → schedule change → offer → acceptance → analytics, and checks the privacy rules.
 
@@ -65,7 +64,7 @@ cd backend
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 cp .env.example .env            # optional: add ANTHROPIC_API_KEY for AI reviews
-.venv/bin/python -m app.seed    # wipes and seeds the campus_connect database
+.venv/bin/python -m app.seed    # creates the 4 demo logins if missing (never deletes anything)
 .venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
@@ -76,7 +75,7 @@ npm install
 npm run dev                      # http://localhost:5173 (proxies /api to :8000)
 ```
 
-Re-run `python -m app.seed` after pulling these changes: drive statuses changed from open/closed to the shared lifecycle (published/completed), and drives now carry `company_id` and `rounds`.
+The database holds real data only. `python -m app.seed --wipe` deletes everything except the 4 demo logins and their college (Westbridge) and company (Nimbus Analytics), and resets those to a fresh state.
 
 API docs: http://localhost:8000/docs
 
@@ -91,9 +90,9 @@ API docs: http://localhost:8000/docs
 
 **Email verification:** without SMTP settings the backend runs in dev mode and shows the 6-digit code on screen (and in the server log). Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` and `SMTP_FROM` in `backend/.env` to send real emails.
 
-**Tests:** `CHECK_EMAIL_DELIVERABILITY=false .venv/bin/python -m tests.test_onboarding` walks the whole chain: college signup → admin approval → student signup → placement-cell approval → company connection → drive → shared experience. It cleans up after itself.
+**Tests** (each creates its own data and removes it afterwards): `CHECK_EMAIL_DELIVERABILITY=false .venv/bin/python -m tests.test_onboarding` walks the whole chain: college signup → admin approval → student signup → placement-cell approval → company connection → drive → shared experience. It cleans up after itself.
 
-The seed creates 12 fictional colleges (10 verified, 2 waiting for the admin), 7 companies (5 verified, 2 waiting), 125 students plus 6 sign-ups waiting for Westbridge's placement cell, connections between colleges and companies (including one pending request to Westbridge), 11 drives run round by round, and 45 shared experiences. The demo student was rejected at resume screening for *Data Analyst* and at the assessment for *Backend Developer*. All colleges, companies and people are fictional.
+There is no dummy data: dashboards start at zero and fill up as real colleges, companies and students use the site. The demo logins belong to an empty demo college (Westbridge Institute of Technology) and company (Nimbus Analytics). Placement health shows "not enough data yet" until there are real past placement outcomes to learn from.
 
 ## Project layout
 
@@ -106,7 +105,8 @@ backend/app/
                    college (+ connections, messages) · experiences (+ moderation) · hub (notifications, actions, notices, issues)
   ml/              ats · eligibility · health · insights · student_analytics · llm
   emailing.py      email validation + verification codes
-  seed.py          demo data
+  seed.py          demo logins only (--wipe removes everything else)
+  migrate_db.py    copy a database (e.g. local -> MongoDB Atlas)
 frontend/src/
   pages/           Landing, sign-up flows, Student, Placement cell, Company and Admin views
   components/fx/   particle field, 3D dot globe, scroll/tilt/count-up motion

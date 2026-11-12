@@ -87,8 +87,42 @@ export function OtpInput({ value, onChange }) {
 }
 
 /** Email field + "send code" + 6-digit code entry. Calls onVerifiedEmail(normalisedEmail) once a code was sent. */
+export const VERIFY_CHANNEL = "cc-verify";
+
 export function EmailVerify({ email, setEmail, code, setCode, payload, hint, label = "Email" }) {
-  const [state, setState] = useState({ sending: false, sent: false, error: null, dev: null, normalized: null });
+  // a code already filled in (sign-up reopened from the email) means it was sent
+  const [state, setState] = useState({ sending: false, sent: Boolean(code), error: null, dev: null, normalized: code ? email : null });
+  const [fromEmail, setFromEmail] = useState(false);
+  // a code that arrives later (sign-up reopened from the email) also counts as sent
+  useEffect(() => {
+    if (code && !state.sent) setState((x) => ({ ...x, sent: true, normalized: x.normalized || (email || "").trim().toLowerCase() }));
+  }, [code]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // "Verify my email" in the email opens /verify, which hands the code to this tab
+  useEffect(() => {
+    const target = (state.normalized || email || "").trim().toLowerCase();
+    const take = (msg) => {
+      if (!msg || !/^\d{6}$/.test(msg.code || "") || (msg.email || "").toLowerCase() !== target) return false;
+      setCode(msg.code);
+      setFromEmail(true);
+      setState((x) => ({ ...x, sent: true, normalized: x.normalized || target }));
+      return true;
+    };
+    let ch;
+    try {
+      ch = new BroadcastChannel(VERIFY_CHANNEL);
+      ch.onmessage = (e) => { if (e.data?.type === "code" && take(e.data)) ch.postMessage({ type: "ack", email: target }); };
+    } catch { ch = null; }
+    const onStorage = (e) => {
+      if (e.key !== VERIFY_CHANNEL || !e.newValue) return;
+      try {
+        const msg = JSON.parse(e.newValue);
+        if (take(msg)) localStorage.setItem(`${VERIFY_CHANNEL}-ack`, JSON.stringify({ email: target, at: Date.now() }));
+      } catch { /* ignore */ }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => { ch?.close(); window.removeEventListener("storage", onStorage); };
+  }, [email, state.normalized]); // eslint-disable-line react-hooks/exhaustive-deps
   const [cool, setCool] = useState(0);
   useEffect(() => {
     if (!cool) return;
@@ -122,7 +156,8 @@ export function EmailVerify({ email, setEmail, code, setCode, payload, hint, lab
       {state.sent && (
         <div className="rounded-2xl border border-brand-100 bg-brand-50/50 p-4">
           <div className="mb-3 flex items-center gap-2 text-sm"><MailCheck className="h-4 w-4 text-brand-600" /> Enter the 6-digit code sent to <b className="font-medium">{state.normalized}</b></div>
-          <OtpInput value={code} onChange={setCode} />
+          <OtpInput value={code} onChange={(v) => { setFromEmail(false); setCode(v); }} />
+          {fromEmail && <p className="mt-3 text-xs font-medium text-emerald-700">✓ Code filled in from your email. Continue to the next step.</p>}
           {state.dev && (
             <p className="mt-3 text-xs text-ink-muted">Dev mode (no email server configured): your code is <b className="font-mono text-ink">{state.dev}</b></p>
           )}

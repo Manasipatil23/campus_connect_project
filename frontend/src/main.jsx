@@ -18,11 +18,13 @@ import ManageDrives from "./pages/ManageDrives";
 import DriveForm from "./pages/DriveForm";
 import Applicants from "./pages/Applicants";
 import CoordinatorAnalytics from "./pages/AdminAnalytics";
-import AdminDashboard from "./pages/AdminDashboard";
+import AdminDashboard, { AdminApprovals } from "./pages/AdminDashboard";
 import CollegeStudents from "./pages/CollegeStudents";
 import Connect from "./pages/Connect";
 import Experiences from "./pages/Experiences";
 import Pending from "./pages/Pending";
+import CopyCode from "./pages/CopyCode";
+import VerifyFromEmail from "./pages/VerifyFromEmail";
 import DriveDetail from "./pages/DriveDetail";
 import Inbox from "./pages/Inbox";
 import Notices from "./pages/Notices";
@@ -54,6 +56,8 @@ function PublicOnly({ children }) {
 function App() {
   return (
     <Routes>
+      <Route path="/copy" element={<CopyCode />} />
+      <Route path="/verify" element={<VerifyFromEmail />} />
       <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
       <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
       <Route path="/" element={<Root />}>
@@ -65,6 +69,8 @@ function App() {
         <Route path="inbox" element={<ByRole recruiter={<Inbox />} coordinator={<Inbox />} />} />
         <Route path="notices" element={<ByRole student={<Notices />} coordinator={<Notices />} />} />
         <Route path="help" element={<ByRole student={<Help />} />} />
+        <Route path="approvals/colleges" element={<ByRole admin={<AdminApprovals kind="college" key="college" />} />} />
+        <Route path="approvals/companies" element={<ByRole admin={<AdminApprovals kind="company" key="company" />} />} />
         <Route path="insights" element={<ByRole student={<Insights />} />} />
         <Route path="applications/:id" element={<ByRole student={<ApplicationDetail />} />} />
         <Route path="resume" element={<ByRole student={<Resume />} />} />

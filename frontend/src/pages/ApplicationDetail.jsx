@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Check, Clock, Lightbulb, Lock, Sparkles, X } from "lucide-react";
 import { api } from "../api";
-import { Badge, Bar, ErrorNote, Spinner, useApi } from "../components/ui";
+import { Badge, Bar, ErrorNote, Spinner, useApi, fmtDate } from "../components/ui";
 import { StudentRound } from "../components/workflow";
 
 const STATE_STYLE = {
@@ -26,7 +26,7 @@ function Timeline({ rounds }) {
             </span>
             <div>
               <div className="text-sm font-medium">{r.label}</div>
-              <div className="text-xs text-ink-muted">{s.text}{r.at && r.state === "cleared" ? ` · ${new Date(r.at).toLocaleDateString()}` : ""}</div>
+              <div className="text-xs text-ink-muted">{s.text}{r.at && r.state === "cleared" ? ` · ${fmtDate(r.at)}` : ""}</div>
             </div>
           </li>
         );
@@ -252,7 +252,7 @@ export default function ApplicationDetail() {
           <div>
             <div className="eyebrow">{drive.company}</div>
             <h1 className="mt-4 text-3xl font-medium tracking-[-0.03em] sm:text-4xl">{drive.role}</h1>
-            <p className="mt-1 text-ink-muted">{drive.ctc_lpa} LPA · {drive.location} · applied {new Date(app.applied_at).toLocaleDateString()}</p>
+            <p className="mt-1 text-ink-muted">{drive.ctc_lpa} LPA · {drive.location} · applied {fmtDate(app.applied_at)}</p>
           </div>
           <div className="flex flex-col items-end gap-2">
             <Badge value={app.status} />

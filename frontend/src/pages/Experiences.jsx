@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { BadgeCheck, Clock, Monitor, Plus, Search, ThumbsUp, Trash2, X } from "lucide-react";
 import { api } from "../api";
 import { Reveal } from "../components/fx/motion";
-import { ErrorNote, Modal, PageHeader, Spinner, Tabs, useApi } from "../components/ui";
+import { ErrorNote, Modal, PageHeader, Spinner, Tabs, useApi, fmtDate } from "../components/ui";
 import { Field } from "../components/forms";
 
 const ROUNDS = ["Online assessment", "Coding round", "Technical interview", "HR interview", "Group discussion", "Other"];
@@ -47,7 +47,7 @@ function ExperienceCard({ e, onHelpful, onDelete }) {
       {e.topics.length > 0 && <div className="mt-4 flex flex-wrap gap-1.5">{e.topics.map((t) => <span key={t} className="chip bg-brand-50 text-brand-700">{t}</span>)}</div>}
       {e.tips && <blockquote className="mt-5 rounded-2xl bg-brand-50/60 p-4 text-sm text-ink-soft">“{e.tips}”</blockquote>}
       <div className="mt-5 flex items-center justify-between border-t border-black/[.05] pt-4 text-xs text-ink-muted">
-        <span>{e.author ? `${e.author}` : "Anonymous"} · {e.college} · {new Date(e.created_at).toLocaleDateString()}</span>
+        <span>{e.author ? `${e.author}` : "Anonymous"} · {e.college} · {fmtDate(e.created_at)}</span>
         <div className="flex items-center gap-2">
           {e.mine && <button onClick={() => onDelete(e)} className="rounded-full p-1.5 hover:bg-rose-50 hover:text-rose-600" aria-label="Delete"><Trash2 className="h-4 w-4" /></button>}
           <button onClick={() => onHelpful(e)} className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 transition ${e.marked_helpful ? "bg-brand-600 text-white" : "bg-black/[.04] hover:bg-brand-50 hover:text-brand-700"}`}>
