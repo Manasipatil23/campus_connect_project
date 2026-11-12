@@ -8,7 +8,7 @@ from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 
 from ..auth import require_role
 from ..db import db, serialize
@@ -231,6 +231,22 @@ async def bulk_decide(body: BulkDecisionIn, background: BackgroundTasks, user: d
     return counts
 
 
+@router.post("/college/students/roster-match")
+async def roster_match(file: UploadFile = File(...), user: dict = Depends(coordinator)):
+    """Compare an official student list (CSV, Excel, PDF, Word, text) with the sign-ups waiting for
+    approval. Approves nothing: the placement cell reviews the matches, then approves them in one go."""
+    from ..roster import match, read_rows
+    rows = read_rows(file.filename or "", await file.read())
+    if not rows:
+        raise HTTPException(400, "No rows found in that file")
+    q = {"role": "student", "college_id": user["college_id"]}
+    waiting = [serialize(s) async for s in db.users.find({**q, "status": "pending"}, STUDENT_FIELDS)]
+    approved = [s async for s in db.users.find({**q, "status": "active"}, {"name": 1, "roll_number": 1, "email": 1})]
+    out = match(rows, waiting, approved)
+    out["file"] = file.filename
+    return out
+
+
 @router.get("/college/students/name-changes")
 async def name_changes(user: dict = Depends(coordinator)):
     """Students whose name change the placement cell hasn't signed off yet."""
@@ -362,7 +378,9 @@ async def request_connection(body: ConnectIn, user: dict = Depends(org_member)):
     me = await _org_name(user)
     receivers = await (company_staff(key["company_id"]) if by == "college" else college_staff(key["college_id"]))
     await notify(receivers, "New connection request", f"{me} wants to connect" + (f": “{body.message}”" if body.message else ""),
-                 "/inbox", "connection")
+                 "/inbox", "connection", email_from=user,
+                 email_body=f"{me} would like to connect on Campus Connect." + (f"\n\n“{body.message}”" if body.message else "")
+                 + "\n\nOpen your inbox to accept or decline.")
     await log_update(entity="connection", entity_id=str(doc["_id"]), college_id=key["college_id"], company_id=key["company_id"],
                      action="requested", summary=f"Connection requested by {me}", by=user)
     return serialize(doc)
@@ -395,7 +413,8 @@ async def respond_connection(conn_id: str, body: DecisionIn, user: dict = Depend
                                                                     "response_note": body.note}})
     me = await _org_name(user)
     await notify(await _other_side(conn, user), f"Connection {status}", f"{me} {status} your request." +
-                 (" You can now coordinate drives." if status == "accepted" else ""), "/connect", "connection")
+                 (" You can now coordinate drives." if status == "accepted" else ""), "/connect", "connection",
+                 email_from=user)
     await log_update(entity="connection", entity_id=conn_id, college_id=conn["college_id"], company_id=conn["company_id"],
                      action=status, summary=f"Connection {status} by {me}", by=user)
     return {"id": conn_id, "status": status}
@@ -459,7 +478,8 @@ async def send_message(conn_id: str, body: MessageIn, user: dict = Depends(org_m
     me = await _org_name(user)
     kind = {"info_request": "asked for more information", "date_confirmation": "sent a date confirmation",
             "document_request": "requested a document"}.get(body.kind, "sent a message")
-    await notify(await _other_side(conn, user), f"{me} {kind}", body.text[:140], f"/connect?thread={conn_id}", "message")
+    await notify(await _other_side(conn, user), f"{me} {kind}", body.text[:140], f"/connect?thread={conn_id}", "message",
+                 email_from=user, email_body=body.text)
     return {**serialize(doc), "mine": True}
 
 

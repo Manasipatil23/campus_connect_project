@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowRight, Award, BookOpen, CheckCircle2, X, FileText, GraduationCap, Layers, Mail, MessageSquare, Pause, Phone, Play, Search, Undo2, UserCheck, XCircle } from "lucide-react";
+import { ArrowRight, AlertTriangle, Award, ListChecks, Loader2, Upload, BookOpen, CheckCircle2, X, FileText, GraduationCap, Layers, Mail, MessageSquare, Pause, Phone, Play, Search, Undo2, UserCheck, XCircle } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { Empty, ErrorNote, PageHeader, Spinner, Stat, Tabs, ago, useApi, fmtDate, plural } from "../components/ui";
+import { Empty, ErrorNote, Modal, PageHeader, Spinner, Stat, Tabs, ago, useApi, fmtDate, plural } from "../components/ui";
 
 const BRANCH_OPTIONS = ["Computer", "IT", "EXTC", "Electronics", "Mechanical", "AI & DS", "Civil", "Chemical"];
 
@@ -232,6 +232,107 @@ function Overview({ onApprovals }) {
   );
 }
 
+/** Upload the college's official list (CSV, Excel, PDF, Word) and approve every sign-up on it in one go. */
+function RosterMatch({ waiting, onApproved }) {
+  const input = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState(null);
+  const [pick, setPick] = useState(() => new Set());
+  const [err, setErr] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(null);
+  const upload = async (file) => {
+    if (!file) return;
+    setErr(null); setDone(null); setBusy(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const r = await api("/college/students/roster-match", { method: "POST", form });
+      setRes(r);
+      setPick(new Set(r.matched.filter((m) => m.sure).map((m) => m.student.id)));
+    } catch (e) { setErr(e.message); } finally {
+      setBusy(false);
+      if (input.current) input.current.value = "";
+    }
+  };
+  const approve = async () => {
+    setSaving(true); setErr(null);
+    try {
+      const r = await api("/college/students/bulk-decision", { method: "POST", body: { approve: [...pick] } });
+      setDone(r); setRes(null); onApproved();
+    } catch (e) { setErr(e.message); } finally { setSaving(false); }
+  };
+  const flip = (id) => setPick((cur) => { const n = new Set(cur); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const sure = res?.matched.filter((m) => m.sure).length || 0;
+  const check = (res?.matched.length || 0) - sure;
+  return (
+    <>
+      <div className="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-black/[.06] bg-white px-4 py-3 text-sm shadow-soft">
+        <ListChecks className="h-5 w-5 shrink-0 text-brand-600" />
+        <div className="min-w-0 flex-1">
+          <div className="font-medium">Have an official list of students?</div>
+          <div className="text-xs text-ink-muted">Upload it (CSV, Excel, PDF or Word). We match it with the {plural(waiting, "sign-up")} waiting, you check the matches, then approve them all at once.</div>
+        </div>
+        <input ref={input} type="file" className="hidden" onChange={(e) => upload(e.target.files?.[0])}
+          accept=".csv,.tsv,.xlsx,.pdf,.docx,.txt,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+        <button className="btn-soft px-4 py-2 text-sm" disabled={busy || !waiting} onClick={() => input.current?.click()}>
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}{busy ? "Matching…" : "Match with your list"}
+        </button>
+      </div>
+      {err && !res && <ErrorNote>{err}</ErrorNote>}
+      {done && <div className="mb-3 rounded-xl bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">Approved {plural(done.approved, "student")} from your list. Everyone gets an email.</div>}
+      <Modal open={Boolean(res)} onClose={() => setRes(null)} wide title={res ? `Matches from ${res.file}` : ""}>
+        {res && (
+          <div className="space-y-5 text-sm">
+            <p className="text-ink-muted">
+              Read {plural(res.rows_read, "row")}. {plural(sure, "sure match", "sure matches")}{check ? `, ${check} to check` : ""}.
+              {res.already_approved > 0 && ` ${plural(res.already_approved, "student")} on the list ${res.already_approved === 1 ? "is" : "are"} already approved.`}
+            </p>
+            {res.matched.length === 0 ? <div className="rounded-xl bg-black/[.03] p-4 text-ink-muted">Nobody waiting matches this list. Check that it has names, roll numbers or emails.</div> : (
+              <div className="divide-y divide-black/[.06] rounded-xl border border-black/[.06]">
+                {res.matched.map((m) => (
+                  <label key={m.student.id} className={`flex cursor-pointer items-start gap-3 p-3 hover:bg-brand-50/30 ${pick.has(m.student.id) ? "" : "text-ink-muted"}`}>
+                    <input type="checkbox" className="mt-1 h-4 w-4 accent-brand-700" checked={pick.has(m.student.id)} onChange={() => flip(m.student.id)} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-ink">{m.student.name}</span>
+                        <span className="font-mono text-xs">{m.student.roll_number}</span>
+                        <span className={`chip ${m.sure ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{m.sure ? `matched by ${m.matched_by}` : `check · ${m.matched_by}`}</span>
+                      </div>
+                      <div className="mt-0.5 truncate text-xs text-ink-muted">Your list: {m.row}</div>
+                      {m.note && <div className="mt-0.5 flex items-center gap-1 text-xs text-amber-700"><AlertTriangle className="h-3 w-3" />{m.note}</div>}
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+            {res.not_in_list.length > 0 && (
+              <details className="rounded-xl bg-black/[.03] px-4 py-3">
+                <summary className="cursor-pointer font-medium">{plural(res.not_in_list.length, "sign-up")} not on your list (left waiting)</summary>
+                <p className="mt-2 text-xs text-ink-muted">{res.not_in_list.map((s) => `${s.name}${s.roll_number ? ` (${s.roll_number})` : ""}`).join(", ")}</p>
+              </details>
+            )}
+            {res.list_only_count > 0 && (
+              <details className="rounded-xl bg-black/[.03] px-4 py-3">
+                <summary className="cursor-pointer font-medium">{plural(res.list_only_count, "row")} on your list with no sign-up yet</summary>
+                <ul className="mt-2 max-h-40 space-y-0.5 overflow-y-auto text-xs text-ink-muted">{res.list_only.map((l, i) => <li key={i}>{l}</li>)}</ul>
+              </details>
+            )}
+            <ErrorNote>{err}</ErrorNote>
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-black/[.06] pt-4">
+              <span className="mr-auto text-xs text-ink-muted">Only ticked students are approved. Nothing changes until you confirm.</span>
+              <button className="btn-ghost" onClick={() => setRes(null)}>Cancel</button>
+              <button className="btn-primary" disabled={saving || !pick.size} onClick={approve}>
+                <CheckCircle2 className="h-4 w-4" />{saving ? "Approving…" : `Approve ${plural(pick.size, "student")}`}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </>
+  );
+}
+
 const NAME_ACTIONS = {
   message: { label: "Message", icon: MessageSquare, prompt: "Message to the student (sent as a notification and email)", button: "Send message", needsText: true },
   revert: { label: "Undo change", icon: Undo2, prompt: "Why are you undoing it? (shown to the student, optional)", button: "Undo name change" },
@@ -385,6 +486,8 @@ export default function CollegeStudents() {
         </div>
       </div>
       <ErrorNote>{err || error}</ErrorNote>
+      {status === "pending" && <RosterMatch waiting={pending?.length || 0}
+        onApproved={() => { reloadPending(); api("/college/students?status=pending").then(setData).catch(() => {}); }} />}
       {bulkDone && (
         <div className="mb-3 rounded-xl bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
           {bulkDone.approved > 0 && `Approved ${plural(bulkDone.approved, "student")}. `}

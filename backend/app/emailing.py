@@ -137,6 +137,44 @@ def _send_message(to: str, subject: str, body: str, reply_to: str = None, html: 
     _deliver(to, subject, body, html, reply_to)
 
 
+def send_bulk(recipients: list, subject: str, text: str, html: str = None, reply_to: str = None, batch: int = 50) -> dict:
+    """One message to many people over a single connection. Recipients go in Bcc (batches of 50),
+    so nobody sees anyone else's address. Returns {"sent": n, "failed": n} (or "logged" in dev mode)."""
+    recipients = sorted({r for r in recipients if r})
+    if not recipients:
+        return {"sent": 0, "failed": 0}
+    if EMAIL_DEV_MODE:
+        log.warning("DEV MODE — email to %d people: %s", len(recipients), subject)
+        return {"logged": len(recipients)}
+    sent = failed = 0
+    try:
+        with _smtp() as s:
+            for i in range(0, len(recipients), batch):
+                group = recipients[i:i + batch]
+                msg = EmailMessage()
+                msg["Subject"], msg["From"], msg["To"], msg["Bcc"] = subject, SMTP_FROM, SMTP_FROM, ", ".join(group)
+                if reply_to:
+                    msg["Reply-To"] = reply_to
+                msg.set_content(text)
+                if html:
+                    msg.add_alternative(html, subtype="html")
+                    from .email_templates import LOGO_CID
+                    if f"cid:{LOGO_CID}" in html:
+                        logo = (Path(__file__).parent / "assets" / "logo-email.png").read_bytes()
+                        msg.get_payload()[1].add_related(logo, maintype="image", subtype="png", cid=f"<{LOGO_CID}>",
+                                                         filename="campus-connect.png")
+                try:
+                    s.send_message(msg)
+                    sent += len(group)
+                except Exception as exc:  # pragma: no cover - depends on the mail server
+                    log.error("Could not send a batch of %d emails: %s", len(group), exc)
+                    failed += len(group)
+    except Exception as exc:  # pragma: no cover
+        log.error("Could not connect to the mail server: %s", exc)
+        failed = len(recipients) - sent
+    return {"sent": sent, "failed": failed}
+
+
 def send_email(to: str, subject: str, body: str, reply_to: str = None, html: str = None) -> str:
     """Returns "sent", "logged" (dev mode: no SMTP configured) or "failed"."""
     if EMAIL_DEV_MODE:

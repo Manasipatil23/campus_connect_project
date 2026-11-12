@@ -129,7 +129,8 @@ async def post_announcement(body: AnnouncementIn, user: dict = Depends(coordinat
     doc = {**body.model_dump(), "college_id": user["college_id"], "audience_label": label, "recipient_ids": ids,
            "by_id": user["id"], "by_name": user["name"], "created_at": now()}
     doc["_id"] = (await db.announcements.insert_one(doc)).inserted_id
-    n = await notify(ids, f"Notice: {body.title}", body.body[:140], "/notices", "announcement")
+    n = await notify(ids, f"Notice: {body.title}", body.body[:140], "/notices", "announcement",
+                     email_from=user, email_body=body.body)
     await log_update(entity="announcement", entity_id=str(doc["_id"]), drive_id=body.drive_id, college_id=user["college_id"],
                      action="announcement", summary=f"Announcement: {body.title}", by=user,
                      visibility="students" if body.drive_id else "internal", notified=f"{n} students")
@@ -181,7 +182,10 @@ async def raise_issue(body: IssueIn, user: dict = Depends(student_only)):
            "owner_name": None, "replies": [], "internal_notes": [], "created_at": t, "updated_at": t,
            "history": [{"status": "open", "at": t, "by": "You"}]}
     doc["_id"] = (await db.issues.insert_one(doc)).inserted_id
-    await notify(await college_staff(user["college_id"]), f"New issue: {body.subject}", body.category, "/inbox?tab=issues", "issue")
+    roll = f" (roll no. {user['roll_number']})" if user.get("roll_number") else ""
+    await notify(await college_staff(user["college_id"]), f"New issue: {body.subject}", body.category, "/inbox?tab=issues", "issue",
+                 email_from=user, email_body=f"{user['name']}{roll} raised an issue.\n\nCategory: {body.category}"
+                 + (f"\nDrive: {doc['drive_label']}" if doc.get("drive_label") else "") + f"\n\n{body.description}")
     return _issue_for_student(doc)
 
 
@@ -224,6 +228,7 @@ async def update_issue(issue_id: str, body: IssuePatch, user: dict = Depends(coo
     if student_visible:
         status = ISSUE_STATUS[sets.get("status", issue["status"])]
         await notify([issue["student_id"]], f"Issue update: {issue['subject']}",
-                     (body.reply[:140] if body.reply else f"Status: {status}"), "/help", "issue")
+                     (body.reply[:140] if body.reply else f"Status: {status}"), "/help", "issue",
+                     email_from=user, email_body=(f"{body.reply}\n\nStatus: {status}" if body.reply else f"Your issue is now: {status}."))
     fresh = await db.issues.find_one({"_id": issue["_id"]})
     return {**serialize(fresh), "status_label": ISSUE_STATUS[fresh["status"]]}

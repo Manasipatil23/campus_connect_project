@@ -7,6 +7,8 @@ Rules this module enforces (from the shared-workflow spec):
     portal, when, and whether they needed approval. Nothing is silently overwritten.
   * Notifications - sent when something relevant to that person changes.
 """
+import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import Iterable, List, Optional
 
@@ -80,15 +82,52 @@ async def log_update(*, entity: str, entity_id: str, action: str, summary: str, 
 
 
 # ---- notifications ----------------------------------------------------------------
+_email_tasks: set = set()   # keeps background email jobs alive until they finish
+log = logging.getLogger("campus_connect")
+
+
 async def notify(user_ids: Iterable[str], title: str, body: str = "", link: Optional[str] = None,
-                 kind: str = "update", exclude: Optional[str] = None) -> int:
+                 kind: str = "update", exclude: Optional[str] = None, email_from: Optional[dict] = None,
+                 email_body: Optional[str] = None) -> int:
+    """In-app notification for each person. With `email_from` (the sender), it is also emailed:
+    replies go straight to the sender, and the email carries the full text (`email_body`)."""
     ids = sorted({u for u in user_ids if u and u != exclude})
     if not ids:
         return 0
     t = now()
     await db.notifications.insert_many([{"user_id": u, "title": title, "body": body, "link": link,
                                          "kind": kind, "read": False, "created_at": t} for u in ids])
+    if email_from:
+        job = asyncio.get_running_loop().create_task(email_people(ids, title, email_body or body, email_from, link))
+        _email_tasks.add(job)
+        job.add_done_callback(_email_tasks.discard)
     return len(ids)
+
+
+async def email_people(user_ids: List[str], subject: str, body: str, by: dict, link: Optional[str] = None) -> dict:
+    """Email a message to these people: personally ("Hi Priya,") for a few, Bcc batches for many."""
+    from fastapi.concurrency import run_in_threadpool
+    from .config import APP_URL
+    from .email_templates import message
+    from .emailing import send_bulk, send_email
+    try:
+        people = [u async for u in db.users.find({"_id": {"$in": [ObjectId(i) for i in user_ids]}, "status": "active"},
+                                                {"email": 1, "name": 1})]
+        org = by.get("company") or ("Placement cell" if by.get("role") == "coordinator" else "")
+        sign = f"{by.get('name')}" + (f" · {org}" if org else "") + "\nSent through Campus Connect"
+        button = ("Open in Campus Connect", f"{APP_URL}{link or '/'}")
+        if len(people) <= 3:
+            out = {}
+            for p in people:
+                subj, text, html = message(subject, f"Hi {(p.get('name') or 'there').split()[0]},", body, sign, button)
+                r = await run_in_threadpool(send_email, p["email"], subj, text, by.get("email"), html)
+                out[r] = out.get(r, 0) + 1
+            return out
+        subj, text, html = message(subject, "Hello,", body, sign, button)
+        return await run_in_threadpool(send_bulk, [p["email"] for p in people], subj, text, html, by.get("email"))
+    except Exception as exc:  # an email problem must never break the action that triggered it
+        log.error("Emailing %d people failed: %s", len(user_ids), exc)
+        return {"failed": len(user_ids)}
 
 
 async def college_staff(college_id: Optional[str]) -> List[str]:
