@@ -3,6 +3,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pymongo.errors import ConnectionFailure as PyMongoConnectionError
 
 from .config import CORS_ORIGINS
 from .db import db, ensure_indexes
@@ -24,8 +26,12 @@ async def train_model() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    await ensure_indexes()
-    await train_model()
+    try:
+        await ensure_indexes()
+        await train_model()
+    except PyMongoConnectionError as exc:
+        # start anyway: requests get a clear "can't reach the database" until it's reachable
+        log.error("Database unreachable at startup (is this IP allowed in Atlas Network Access?): %s", str(exc)[:160])
     yield
 
 
@@ -37,6 +43,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(PyMongoConnectionError)
+async def database_unreachable(_, exc):
+    """The database can't be reached (e.g. Atlas hasn't allowed this IP): say so instead of a bare 500."""
+    log.error("Database unreachable: %s", str(exc)[:200])
+    return JSONResponse(status_code=503, content={"detail": "Can't reach the database right now. Please try again in a minute."})
+
 
 for r in (auth, students, drives, analytics, admin, college, experiences, hub, org):
     app.include_router(r.router)

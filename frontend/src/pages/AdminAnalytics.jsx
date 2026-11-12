@@ -4,7 +4,7 @@ import {
 } from "recharts";
 import Funnel from "../components/Funnel";
 import { Link } from "react-router-dom";
-import { Badge, ErrorNote, PageHeader, Spinner, Stat, scoreColor, useApi } from "../components/ui";
+import { Badge, ErrorNote, PageHeader, Spinner, Stat, scoreColor, useApi, plural } from "../components/ui";
 import { ActionsPanel } from "../components/workflow";
 import { useAuth } from "../auth";
 
@@ -186,7 +186,7 @@ export default function AdminAnalytics() {
               <li key={g.skill} className="grid grid-cols-[7rem_1fr_auto] items-center gap-3">
                 <span>{g.skill}</span>
                 <div className="h-2 rounded-full bg-black/[.04]"><div className={`h-2 rounded-full ${g.coverage < 30 ? "bg-rose-400" : g.coverage < 60 ? "bg-amber-400" : "bg-emerald-400"}`} style={{ width: `${g.coverage}%` }} /></div>
-                <span className="text-xs tabular-nums text-ink-muted">{g.coverage}% · {g.drives} drives</span>
+                <span className="text-xs tabular-nums text-ink-muted">{g.coverage}% · {plural(g.drives, "drive")}</span>
               </li>
             ))}
           </ul>

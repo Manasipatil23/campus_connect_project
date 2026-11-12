@@ -2,13 +2,13 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, CheckCircle2, CircleHelp, ClipboardList, FileSearch, MessageSquare, Pause, Play, XCircle } from "lucide-react";
 import { api } from "../api";
-import { Badge, Empty, ErrorNote, Modal, PageHeader, STATUS_LABELS, Spinner, Tabs, scoreColor, useApi } from "../components/ui";
+import { Badge, Empty, ErrorNote, Modal, PageHeader, STATUS_LABELS, Spinner, Tabs, scoreColor, useApi, plural } from "../components/ui";
 
 const NEXT = {
   applied: [["shortlisted", "Shortlist"], ["rejected", "Reject"]],
   shortlisted: [["assessment_cleared", "Clear assessment"], ["rejected", "Reject"]],
   assessment_cleared: [["offered", "Release offer"], ["rejected", "Reject"]],
-  offered: [["accepted", "Record acceptance"]],
+  offered: [["rejected", "Withdraw offer"]], // the student accepts or declines from their tracker
   accepted: [], rejected: [], withdrawn: [], declined: [],
 };
 const STAGES = ["all", "applied", "shortlisted", "assessment_cleared", "offered", "accepted", "rejected", "withdrawn"];
@@ -173,7 +173,12 @@ export default function Applicants() {
   const toggleHold = async (app) => {
     setErr(null);
     try {
-      const reason = app.on_hold ? null : window.prompt("Reason for putting this candidate on hold (shown to them)") || null;
+      let reason = null;
+      if (!app.on_hold) {
+        reason = window.prompt("Reason for putting this candidate on hold (shown to them)");
+        if (reason === null) return; // Cancel: leave the candidate as they are
+        reason = reason.trim() || null;
+      }
       const res = await api(`/applications/${app.id}/hold`, { method: "POST", body: { on_hold: !app.on_hold, reason } });
       patch(app.id, res);
     } catch (e) { setErr(e.message); }
@@ -198,7 +203,7 @@ export default function Applicants() {
     <>
       <Link to={`/drives/${id}`} className="mb-6 inline-flex items-center gap-1 text-sm text-ink-muted hover:text-ink"><ArrowLeft className="h-4 w-4" /> Drive record</Link>
       <PageHeader eyebrow={drive.company} title={drive.role} accent="candidates."
-        subtitle={`${drive.ctc_lpa} LPA · ${data.applicants.length} applicants, ranked by resume match. ${canHire ? "Each stage change notifies the candidate and updates the college dashboard." : "Read-only: hiring decisions on this drive belong to the company."}`}
+        subtitle={`${drive.ctc_lpa} LPA · ${plural(data.applicants.length, "applicant")}, ranked by resume match. ${canHire ? "Each stage change notifies the candidate and updates the college dashboard." : "Read-only: hiring decisions on this drive belong to the company."}`}
         action={<Badge value={drive.status} label={drive.status_label} />} />
       <div className="mb-6 overflow-x-auto">
         <Tabs value={filter} onChange={setFilter}
@@ -207,26 +212,27 @@ export default function Applicants() {
       <ErrorNote>{err}</ErrorNote>
       <div className="card mt-2 overflow-x-auto">
         {list.length === 0 ? <Empty>No applicants in this stage.</Empty> : (
-          <table className="w-full min-w-[900px] text-sm [&_td]:px-3 [&_th]:px-3">
+          <table className="w-full min-w-[600px] text-sm [&_td]:px-3 [&_th]:px-3">
             <thead className="border-b border-black/[.06] text-left text-xs text-ink-muted">
-              <tr><th className="py-3 pl-6">#</th><th>Candidate</th><th>Branch</th><th className="text-right">CGPA</th><th className="text-right">Match</th><th>Assessment</th><th>Status</th><th className="pr-6 text-right">Next step</th></tr>
+              <tr><th className="py-3 pl-6">#</th><th>Candidate</th><th className="text-right">Match</th><th>Assessment</th><th className="pr-6">Status &amp; next step</th></tr>
             </thead>
             <tbody className="divide-y divide-black/[.05]">
               {list.map((a) => (
                 <tr key={a.id} className="align-top hover:bg-brand-50/30">
                   <td className="py-4 pl-6 tabular-nums text-ink-muted">{a.rank}</td>
                   <td className="py-4">
-                    <div className="font-medium">{a.name}</div><div className="text-xs text-ink-muted">{a.email}</div>
+                    <div className="font-medium">{a.name}</div>
+                    <div className="text-xs text-ink-muted">{[a.branch, a.cgpa != null && `CGPA ${a.cgpa}`].filter(Boolean).join(" · ")}</div>
+                    <div className="text-xs text-ink-muted">{a.email}</div>
+                    {a.placed_elsewhere && <span className="chip mt-1.5 bg-amber-50 text-amber-700" title="Accepted an offer from another drive">Already placed</span>}
                     <div className="mt-1.5 flex max-w-[260px] flex-wrap gap-1">
                       {a.ats.matched_skills.map((s) => <span key={s} className="chip bg-emerald-50 text-emerald-700">{s}</span>)}
                       {a.ats.missing_skills.map((s) => <span key={s} className="chip bg-black/[.04] text-ink-muted line-through">{s}</span>)}
                     </div>
                   </td>
-                  <td className="py-4">{a.branch}</td>
-                  <td className="py-4 text-right tabular-nums">{a.cgpa}</td>
                   <td className={`py-4 text-right font-medium tabular-nums ${scoreColor(a.ats_score)}`}>{a.ats_score}</td>
                   <td className="py-4 text-xs text-ink-muted">
-                    {a.assessment ? Object.entries(a.assessment.sections).map(([k, v]) => <div key={k}>{k}: <span className="text-ink">{v}%</span></div>) : "—"}
+                    {a.assessment ? Object.entries(a.assessment.sections).map(([k, v]) => <div key={k}>{k}: <span className="text-ink">{v}%</span></div>) : !(canHire && a.status === "shortlisted") && "—"}
                     {canHire && a.status === "shortlisted" && (
                       <button className="mt-1 inline-flex items-center gap-1 text-brand-700 hover:underline" onClick={() => setScoring(a)}>
                         <ClipboardList className="h-3.5 w-3.5" /> {a.assessment ? "Edit" : "Record"} scores
@@ -239,8 +245,7 @@ export default function Applicants() {
                       <button className="inline-flex items-center gap-1 text-brand-700 hover:underline" onClick={() => setPanel({ app: a, kind: "screening" })}><FileSearch className="h-3.5 w-3.5" /> Screening</button>
                       <button className="inline-flex items-center gap-1 text-brand-700 hover:underline" onClick={() => setPanel({ app: a, kind: "feedback" })}><MessageSquare className="h-3.5 w-3.5" /> Feedback{a.feedback_count ? ` (${a.feedback_count})` : ""}</button>
                     </div>
-                  </td>
-                  <td className="space-x-1 whitespace-nowrap py-4 pr-6 text-right">
+                    {canHire && <div className="mt-2.5 flex flex-wrap items-center gap-1">
                     {canHire && !["accepted", "rejected", "withdrawn", "declined"].includes(a.status) && (
                       <button onClick={() => toggleHold(a)} className="rounded-full px-2 py-1 text-xs text-ink-muted hover:bg-amber-50 hover:text-amber-700" title={a.on_hold ? "Resume" : "Put on hold"}>
                         {a.on_hold ? <Play className="inline h-3.5 w-3.5" /> : <Pause className="inline h-3.5 w-3.5" />}
@@ -252,7 +257,9 @@ export default function Applicants() {
                         title={s === "assessment_cleared" && !a.assessment ? "Record scores first" : undefined}
                         className={`rounded-full px-3 py-1 text-xs font-medium disabled:opacity-40 ${s === "rejected" ? "text-rose-600 hover:bg-rose-50" : "bg-ink text-white hover:bg-black"}`}>{label}</button>
                     ))}
+                  </div>}
                   </td>
+                  
                 </tr>
               ))}
             </tbody>

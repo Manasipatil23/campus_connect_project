@@ -12,7 +12,10 @@ import statistics
 from collections import Counter, defaultdict
 from typing import Dict, List
 
+from datetime import datetime, timezone
+
 from .ats import score_resume
+from .eligibility import check_eligibility
 from .insights import SECTION_TOPICS, SKILL_TIPS, assessment_insights, reached, resume_insights
 
 
@@ -111,10 +114,14 @@ def build(user: dict, apps: List[dict], drives: Dict[str, dict], peers: Dict[str
 
     # ---- open drives: how well do you match what's open now ------------------
     open_matches = []
+    applied_to = {a["drive_id"] for a in apps}
+    today = datetime.now(timezone.utc).date().isoformat()
     if resume_text:
         for d in college_drives:
-            if d.get("status") == "published":
-                open_matches.append({"company": d["company"], "role": d["role"],
+            # only drives this student can still apply to: open, before the deadline, eligible, not applied
+            if (d.get("status") == "published" and str(d["_id"]) not in applied_to
+                    and not (d.get("deadline") and d["deadline"] < today) and check_eligibility(user, d)[0]):
+                open_matches.append({"drive_id": str(d["_id"]), "company": d["company"], "role": d["role"],
                                      "match": score_resume(resume_text, d["description"], d.get("required_skills"))["score"]})
         open_matches.sort(key=lambda x: -x["match"])
 
@@ -188,7 +195,7 @@ def build(user: dict, apps: List[dict], drives: Dict[str, dict], peers: Dict[str
 
     return {
         "summary": {"applications": len(apps), "offers": sum(reached(a, "offered") for a in apps),
-                    "in_progress": sum(a["status"] not in ("rejected", "accepted") for a in apps),
+                    "in_progress": sum(a["status"] not in ("rejected", "accepted", "withdrawn", "declined") and not a.get("drive_cancelled") for a in apps),
                     "avg_match": round(statistics.mean(a["ats_score"] for a in apps), 1) if apps else None},
         "round_stats": round_stats,
         "going_well": well[:5],
@@ -196,6 +203,8 @@ def build(user: dict, apps: List[dict], drives: Dict[str, dict], peers: Dict[str
         "focus": focus[:5],
         "skills": skills[:16],
         "sections": sections,
+        # assessments taken whose comparison is hidden because fewer than 3 students cleared
+        "assessments_hidden": sum(1 for a in apps if a.get("assessment")) - len(assess_ins),
         "open_matches": open_matches[:6],
         "timeline": sorted(timeline, key=lambda t: t["applied_at"] or 0, reverse=True),
     }

@@ -1,9 +1,10 @@
 """End-to-end onboarding: college signup -> admin approval -> student signup -> TPO approval
--> company connects -> drive -> shared experience. Run: CHECK_EMAIL_DELIVERABILITY=false python -m tests.test_onboarding
+-> company connects -> drive -> shared experience. Run: python -m tests.test_onboarding
 (uses the local database and removes what it creates)."""
 import os
 
 os.environ["SMTP_HOST"] = ""  # tests never send real email (dev mode)
+os.environ["CHECK_EMAIL_DELIVERABILITY"] = "false"  # test addresses use made-up domains
 
 from bson import ObjectId
 from fastapi.testclient import TestClient
@@ -81,6 +82,8 @@ def run():
     finally:
         if col_id:
             db.colleges.delete_one({"_id": ObjectId(col_id)})
+            gone = [str(u["_id"]) for u in db.users.find({"college_id": col_id}, {"_id": 1})]
+            db.notifications.delete_many({"user_id": {"$in": gone}})
             db.users.delete_many({"college_id": col_id})
             db.connections.delete_many({"college_id": col_id})
             db.approvals.delete_many({"$or": [{"target_id": col_id}, {"college_id": col_id}]})

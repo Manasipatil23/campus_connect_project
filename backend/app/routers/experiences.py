@@ -124,8 +124,13 @@ async def shareable(user: dict = Depends(student)):
         rounds = [r for r, stage in ROUND_PROOF.items()
                   if reached(a, stage) or (stage == "shortlisted" and a.get("rejected_round") in ("assessment", "interview"))
                   or (stage == "assessment_cleared" and a.get("rejected_round") == "interview")]
-        if rounds and a["drive_id"] in drives:
-            d = drives[a["drive_id"]]
+        d = drives.get(a["drive_id"])
+        kinds = {r.get("kind") for r in (d or {}).get("rounds", [])}
+        if kinds:
+            # only rounds this drive actually had (a coding round counts as an online assessment)
+            allowed = kinds | ({"Coding round"} if "Online assessment" in kinds else set()) | {"Other"}
+            rounds = [r for r in rounds if r in allowed]
+        if rounds and d:
             out.append({"drive_id": a["drive_id"], "company": d["company"], "role": d["role"], "rounds": rounds})
     return out
 
@@ -186,7 +191,7 @@ async def moderate(exp_id: str, body: ModerateIn, user: dict = Depends(require_r
     update = {"moderation": status, "moderation_note": body.note, "moderated_by": user["id"], "moderated_at": now(),
               "reports": []}
     if status == "approved":
-        update["anonymous"] = True  # approved posts are published anonymised
+        # the author decided whether to show their first name; approval doesn't change that
         if body.tags:
             update["topics"] = sorted(set(e.get("topics", [])) | {t.strip().lower() for t in body.tags if t.strip()})
     await db.experiences.update_one({"_id": e["_id"]}, {"$set": update})

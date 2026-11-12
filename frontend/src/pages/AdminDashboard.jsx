@@ -85,7 +85,7 @@ function DecideForm({ org, kind, decision, onDone, onCancel }) {
           <p className="mt-2 text-xs text-ink-muted">Companies see the tier when they browse colleges.</p>
         </div>
       )}
-      <div><label className="label">{decision === "reject" ? "Reason (shared with them)" : "Note (optional)"}</label>
+      <div><label className="label">{decision === "reject" ? "Reason (emailed to them)" : "Note (optional)"}</label>
         <textarea className="input h-20" required={decision === "reject"} value={note} onChange={(e) => setNote(e.target.value)} /></div>
       <ErrorNote>{err}</ErrorNote>
       <div className="flex justify-end gap-2"><button type="button" className="btn-ghost" onClick={onCancel}>Cancel</button>
@@ -156,7 +156,7 @@ function RecentDecisions() {
     <section className="card mt-6 p-6">
       <div className="mb-4 flex items-baseline justify-between gap-3">
         <h2 className="font-medium">Recent decisions</h2>
-        <span className="text-xs text-ink-muted">Each one is saved in MongoDB (approvals collection)</span>
+        <span className="text-xs text-ink-muted">Approvals and rejections by you and placement cells</span>
       </div>
       {data.length === 0 ? <p className="text-sm text-ink-muted">No approvals or rejections yet.</p> : (
         <ul className="divide-y divide-black/[.05]">

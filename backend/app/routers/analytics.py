@@ -28,7 +28,7 @@ def _funnel(apps: list) -> list:
 @router.get("/overview")
 async def overview(user: dict = Depends(require_role("coordinator"))):
     college = user.get("college_id")
-    students = await db.users.find({"role": "student", "college_id": college}).to_list(None)
+    students = await db.users.find({"role": "student", "college_id": college, "status": "active"}).to_list(None)  # approved only
     drives = await db.drives.find({"college_id": college}).to_list(None)
     apps = await db.applications.find({"drive_id": {"$in": [str(d["_id"]) for d in drives]}},
                                       {"resume_snapshot": 0}).to_list(None)

@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from ..auth import require_role
 from ..db import db, serialize
 from ..schemas import ConnectIn, DecisionIn, MessageIn
-from ..workflow import CONNECTION_STATUS, record_approval, college_staff, company_staff, log_update, notify, now
+from ..workflow import CONNECTION_STATUS, email_decision, record_approval, college_staff, company_staff, log_update, notify, now
 from .drives import oid
 
 router = APIRouter(prefix="/api", tags=["college", "connections"])
@@ -199,6 +199,7 @@ async def decide_student(student_id: str, body: DecisionIn, user: dict = Depends
         "status": status, "reviewed_at": datetime.now(timezone.utc), "review_note": body.note}})
     await record_approval(kind="student", target_id=student_id, name=student["name"], email=student["email"],
                           decision=body.decision, by=user, note=body.note, college_id=user["college_id"])
+    await email_decision(student["email"], student["name"], body.decision == "approve", "Campus Connect account", body.note, user)
     return {"id": student_id, "status": status}
 
 

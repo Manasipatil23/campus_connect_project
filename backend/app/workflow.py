@@ -112,7 +112,7 @@ async def drive_company_staff(drive: dict) -> List[str]:
     return ids
 
 
-ACTIVE_APP = {"$nin": ["rejected", "withdrawn", "declined"]}
+ACTIVE_APP = {"$nin": ["rejected", "withdrawn", "declined", "accepted"]}  # accepted: placed, done with this drive
 
 
 async def drive_applicants(drive_id: str, active_only: bool = True) -> List[str]:
@@ -159,3 +159,45 @@ async def record_approval(*, kind: str, target_id: str, name: str, email: Option
            "decided_at": now()}
     doc["_id"] = (await db.approvals.insert_one(doc)).inserted_id
     return doc
+
+
+async def admins() -> List[str]:
+    return [str(u["_id"]) async for u in db.users.find({"role": "admin", "status": "active"}, {"_id": 1})]
+
+
+async def email_decision(to: Optional[str], name: str, approved: bool, what: str, note: Optional[str], by: dict) -> None:
+    """Tell someone about an approval decision by email (they may not sign in again to see it)."""
+    if not to:
+        return
+    from fastapi.concurrency import run_in_threadpool
+    from .config import APP_URL
+    from .email_templates import message
+    from .emailing import send_email
+    first = (name or "there").split()[0]
+    if approved:
+        body = f"Good news: your {what} has been approved. You can now sign in and use Campus Connect."
+        if note:
+            body += f"\n\nNote: {note}"
+    else:
+        body = f"Your {what} wasn't approved." + (f"\n\nReason: {note}" if note else "")
+        body += "\n\nIf you think this is a mistake, reply to this email."
+    subject, text, html = message(f"Campus Connect: {what} {'approved' if approved else 'not approved'}", f"Hi {first},", body,
+                                  f"{by.get('name')}\nCampus Connect", ("Open Campus Connect", f"{APP_URL}/login"))
+    await run_in_threadpool(send_email, to, subject, text, by.get("email"), html)
+
+
+def lpa(x) -> str:
+    """12.0 -> "12 LPA", 6.5 -> "6.5 LPA" """
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return f"{x} LPA"
+    return f"{int(v) if v.is_integer() else round(v, 2)} LPA"
+
+
+def day(iso) -> str:
+    """"2026-12-20" -> "20 Dec 2026" (anything else is returned as is)"""
+    try:
+        return datetime.strptime(str(iso)[:10], "%Y-%m-%d").strftime("%-d %b %Y")
+    except ValueError:
+        return str(iso)

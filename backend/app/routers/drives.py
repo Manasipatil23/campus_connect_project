@@ -26,7 +26,18 @@ from ..schemas import (FUNNEL, ROUND_AT_STATUS, STAGE_LABELS, TERMINAL, Assessme
                        ScreeningReviewIn, StatusIn)
 from ..workflow import (ACCEPTING, DRIVE_STATUS, FIELD_LABELS, LIVE, ROUND_STATUS, STUDENT_FACING_FIELDS,
                         STUDENT_VISIBLE, affected_students, college_staff, drive_applicants, drive_company_staff,
-                        drive_label, eligible_students, log_update, notify, now)
+                        drive_label, eligible_students, log_update, notify, now, lpa, day)
+
+
+def _change_text(field: str, label: str, new) -> str:
+    """Tell students what a confirmed change now says, not just that something changed."""
+    if field == "ctc_lpa" and new is not None:
+        return f"CTC is now {lpa(new)}."
+    if field == "deadline" and new:
+        return f"Applications now close on {day(new)}."
+    if field in ("location", "role") and new:
+        return f"{label} is now {new}."
+    return f"{label} was updated. Open the drive to see the details."
 
 router = APIRouter(prefix="/api", tags=["drives"])
 managers = require_role("recruiter", "coordinator")
@@ -416,7 +427,7 @@ async def decide_change(change_id: str, body: ChangeDecisionIn, user: dict = Dep
         await db.drives.update_one({"_id": drive["_id"]}, {"$set": {"rounds": rounds, "updated_at": t}})
         if approved and visible:
             msg = (f"{r['name']} was cancelled." if r["status"] == "cancelled"
-                   else f"{r['name']} is now on {r.get('date')}{' at ' + r['time'] if r.get('time') else ''}.")
+                   else f"{r['name']} is now on {day(r.get('date'))}{' at ' + r['time'] if r.get('time') else ''}.")
             n_students = await notify(await affected_students(drive), f"Schedule update · {drive_label(drive)}",
                                       msg, f"/drives/{did}", "schedule")
         await log_update(entity="drive", entity_id=did, drive_id=did, college_id=drive["college_id"],
@@ -432,7 +443,7 @@ async def decide_change(change_id: str, body: ChangeDecisionIn, user: dict = Dep
             await db.drives.update_one({"_id": drive["_id"]}, {"$set": {f: ch["new"], "updated_at": t}})
             if visible:
                 n_students = await notify(await affected_students({**drive, f: ch["new"]}), f"Drive updated · {drive_label(drive)}",
-                                          f"{ch['label']} was updated.", f"/drives/{did}", "drive")
+                                          _change_text(f, ch["label"], ch["new"]), f"/drives/{did}", "drive")
         await log_update(entity="drive", entity_id=did, drive_id=did, college_id=drive["college_id"],
                          company_id=drive.get("company_id"), action="change_" + ("approved" if approved else "rejected"),
                          field=f, summary=f"{ch['label']} change " + ("approved and published" if approved else "not accepted"),
@@ -483,7 +494,9 @@ async def review_drive(drive_id: str, body: DriveReviewIn, user: dict = Depends(
         update["rounds"] = rounds
     await db.drives.update_one({"_id": drive["_id"]}, {"$set": update})
     label = {"approved": "Drive approved", "changes_requested": "Changes requested", "cancelled": "Drive declined"}[new]
-    n = await notify(await drive_company_staff(drive), f"{label} · {drive_label(drive)}", body.note or "", f"/drives/{drive_id}", "drive")
+    default = {"approved": "Next, the placement cell publishes it to eligible students.",
+               "changes_requested": "Open the drive to see what to change.", "cancelled": "The placement cell declined this drive."}[new]
+    n = await notify(await drive_company_staff(drive), f"{label} · {drive_label(drive)}", body.note or default, f"/drives/{drive_id}", "drive")
     await log_update(entity="drive", entity_id=drive_id, drive_id=drive_id, college_id=drive["college_id"],
                      company_id=drive.get("company_id"), action="status", field="status", old="review", new=new,
                      summary=label + (f": {body.note}" if body.note else ""), by=user,
@@ -504,7 +517,7 @@ async def publish_drive(drive_id: str, user: dict = Depends(require_role("coordi
     drive["status"] = "published"
     students = await eligible_students(drive)
     n = await notify(students, f"New drive · {drive_label(drive)}",
-                     f"{drive['ctc_lpa']} LPA" + (f" · apply by {drive['deadline']}" if drive.get("deadline") else ""),
+                     lpa(drive['ctc_lpa']) + (f" · apply by {day(drive['deadline'])}" if drive.get("deadline") else ""),
                      f"/drives/{drive_id}", "drive")
     await notify(await drive_company_staff(drive), "Drive published to students",
                  f"{drive_label(drive)} is live for {n} eligible students.", f"/drives/{drive_id}", "drive")
@@ -528,14 +541,20 @@ async def set_drive_status(drive_id: str, body: DriveStatusIn, user: dict = Depe
     if new == "cancelled" and not body.reason:
         raise HTTPException(400, "Give a reason for cancelling")
     await db.drives.update_one({"_id": drive["_id"]}, {"$set": {"status": new, "status_reason": body.reason, "updated_at": now()}})
+    if new == "cancelled":
+        # a cancelled drive can't leave anyone placed through it, or applications "in progress"
+        await db.applications.update_many({"drive_id": drive_id}, {"$set": {"drive_cancelled": True}})
+        await db.users.update_many({"role": "student", "placement.drive_id": drive_id},
+                                   {"$set": {"placement": {"status": "unplaced", "previous": {"company": drive["company"],
+                                                                                              "cancelled_at": now()}}}})
     visible = cur in STUDENT_VISIBLE
     label = {"in_progress": "Applications closed — selection in progress", "completed": "Drive completed",
              "cancelled": "Drive cancelled"}[new]
     other = await (college_staff(drive["college_id"]) if is_company(user, drive) else drive_company_staff(drive))
     await notify(other, f"{label} · {drive_label(drive)}", body.reason or "", f"/drives/{drive_id}", "drive")
     n = 0
-    if visible and new in ("cancelled", "in_progress"):
-        n = await notify(await drive_applicants(drive_id) if new == "in_progress" else await affected_students(drive),
+    if visible and new in ("cancelled", "in_progress", "completed"):
+        n = await notify(await drive_applicants(drive_id) if new != "cancelled" else await affected_students(drive),
                          f"{label} · {drive_label(drive)}", body.reason or "", f"/drives/{drive_id}", "drive")
     await log_update(entity="drive", entity_id=drive_id, drive_id=drive_id, college_id=drive["college_id"],
                      company_id=drive.get("company_id"), action="status", field="status", old=cur, new=new,
@@ -558,7 +577,7 @@ async def add_round(drive_id: str, body: RoundIn, user: dict = Depends(managers)
     await db.drives.update_one({"_id": drive["_id"]}, {"$push": {"rounds": r}, "$set": {"updated_at": now()}})
     if is_company(user, drive) and drive["status"] not in ("draft", "changes_requested"):
         await notify(await college_staff(drive["college_id"]), "New round to confirm",
-                     f"{drive_label(drive)}: {r['name']}" + (f" on {r['date']}" if r.get("date") else ""), f"/drives/{drive_id}", "schedule")
+                     f"{drive_label(drive)}: {r['name']}" + (f" on {day(r['date'])}" if r.get("date") else ""), f"/drives/{drive_id}", "schedule")
     await log_update(entity="drive", entity_id=drive_id, drive_id=drive_id, college_id=drive["college_id"],
                      company_id=drive.get("company_id"), action="round_added", field=f"round:{r['name']}",
                      summary=f"Round added: {r['name']} ({ROUND_STATUS[r['status']]})", new={"date": r.get("date")}, by=user,
@@ -604,7 +623,7 @@ async def change_round(drive_id: str, round_id: str, body: RoundPatch, user: dic
         await db.drives.update_one({"_id": drive["_id"]}, {"$set": {"rounds": rounds, "updated_at": t}})
         n = 0
         if is_college(user, drive) and visible and r.get("confirmed"):
-            msg = f"{r['name']} was cancelled." if body.cancel else f"{r['name']}: {r.get('date')}{' ' + r['time'] if r.get('time') else ''}"
+            msg = f"{r['name']} was cancelled." if body.cancel else f"{r['name']}: {day(r.get('date'))}{' ' + r['time'] if r.get('time') else ''}"
             n = await notify(await affected_students(drive), f"Schedule update · {drive_label(drive)}", msg, f"/drives/{drive_id}", "schedule")
             await notify(await drive_company_staff(drive), "Placement cell updated the schedule",
                          f"{drive_label(drive)}: {msg}", f"/drives/{drive_id}", "schedule")
@@ -632,7 +651,7 @@ async def change_round(drive_id: str, round_id: str, body: RoundPatch, user: dic
         "old": old, "new": new, "reason": body.reason, "status": "pending", "proposed_by": user["id"],
         "proposed_by_name": user["name"], "portal": "company", "created_at": t})
     n = await notify(await college_staff(drive["college_id"]), "Schedule change to confirm",
-                     f"{drive_label(drive)}: {r['name']} " + ("cancellation" if body.cancel else f"→ {new.get('date')}"),
+                     f"{drive_label(drive)}: {r['name']} " + ("cancellation" if body.cancel else f"→ {day(new.get('date'))}"),
                      f"/drives/{drive_id}", "schedule")
     await log_update(entity="drive", entity_id=drive_id, drive_id=drive_id, college_id=drive["college_id"],
                      company_id=drive.get("company_id"), action="schedule_proposed", field=f"round:{r['name']}",
@@ -659,8 +678,8 @@ async def confirm_round(drive_id: str, round_id: str, user: dict = Depends(requi
     n = 0
     if visible:
         n = await notify(await affected_students(drive), f"Date confirmed · {drive_label(drive)}",
-                         f"{r['name']} on {r['date']}{' at ' + r['time'] if r.get('time') else ''}", f"/drives/{drive_id}", "schedule")
-    await notify(await drive_company_staff(drive), "Round date confirmed", f"{drive_label(drive)}: {r['name']} on {r['date']}",
+                         f"{r['name']} on {day(r['date'])}{' at ' + r['time'] if r.get('time') else ''}", f"/drives/{drive_id}", "schedule")
+    await notify(await drive_company_staff(drive), "Round date confirmed", f"{drive_label(drive)}: {r['name']} on {day(r['date'])}",
                  f"/drives/{drive_id}", "schedule")
     await log_update(entity="drive", entity_id=drive_id, drive_id=drive_id, college_id=drive["college_id"],
                      company_id=drive.get("company_id"), action="schedule_confirmed", field=f"round:{r['name']}",
@@ -705,6 +724,11 @@ async def apply(drive_id: str, user: dict = Depends(require_role("student"))):
     except DuplicateKeyError:
         raise HTTPException(409, "You have already applied to this drive")
     doc["_id"] = res.inserted_id
+    who = f"{user['name']} ({(user.get('profile') or {}).get('branch') or 'student'})"
+    await notify(await drive_company_staff(drive), f"New application · {drive['role']}", who,
+                 f"/drives/{drive_id}/candidates", "application")
+    await notify(await college_staff(drive["college_id"]), f"New application · {drive_label(drive)}", who,
+                 f"/drives/{drive_id}", "application")
     return serialize(doc)
 
 
@@ -725,7 +749,10 @@ async def applicants(drive_id: str, user: dict = Depends(managers)):
         item = {**serialize(a), "rank": rank, "name": s.get("name"), "email": s.get("email"),
                 "branch": p.get("branch"), "cgpa": p.get("cgpa"), "internships": p.get("internships"),
                 "screening_shared": bool((a.get("screening_review") or {}).get("share_with_student")),
-                "feedback_count": len(a.get("feedback", []))}
+                "feedback_count": len(a.get("feedback", [])),
+                # the student already accepted an offer from another drive (company name stays private)
+                "placed_elsewhere": (s.get("placement") or {}).get("status") == "placed"
+                                    and (s.get("placement") or {}).get("drive_id") != a["drive_id"]}
         item.pop("feedback", None)
         out.append(item)
     view = drive_out(drive)
@@ -759,6 +786,8 @@ async def update_status(app_id: str, body: StatusIn, user: dict = Depends(manage
         raise HTTPException(400, f"Next step after {cur} is {FUNNEL[FUNNEL.index(cur) + 1]}")
     if new == "assessment_cleared" and not app.get("assessment"):
         raise HTTPException(400, "Record assessment scores before clearing the assessment")
+    if new == "accepted":
+        raise HTTPException(400, "Only the student can accept or decline an offer")
 
     t = now()
     update = {"status": new, "on_hold": False, "updated_at": t}
@@ -768,12 +797,6 @@ async def update_status(app_id: str, body: StatusIn, user: dict = Depends(manage
         {"_id": app["_id"]}, {"$set": update, "$push": {"history": {"status": new, "at": t, "by": user["name"],
                                                                      "portal": "company" if user["role"] == "recruiter" else "college",
                                                                      "reason": body.reason}}})
-    if new == "accepted":
-        await db.users.update_one(
-            {"_id": ObjectId(app["student_id"])},
-            {"$set": {"placement": {"status": "placed", "company": drive["company"],
-                                    "ctc_lpa": drive["ctc_lpa"], "drive_id": app["drive_id"], "at": t}}},
-        )
     link = f"/applications/{app_id}"
     title = {"shortlisted": "Shortlisted after resume screening", "assessment_cleared": "You cleared the assessment",
              "offered": "You have an offer", "accepted": "Offer acceptance recorded",

@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { BadgeCheck, Clock, Monitor, Plus, Search, ThumbsUp, Trash2, X } from "lucide-react";
+import { BadgeCheck, Clock, Flag, Monitor, Plus, Search, ThumbsUp, Trash2, X } from "lucide-react";
 import { api } from "../api";
 import { Reveal } from "../components/fx/motion";
-import { ErrorNote, Modal, PageHeader, Spinner, Tabs, useApi, fmtDate } from "../components/ui";
+import { ErrorNote, Modal, PageHeader, Spinner, Tabs, useApi, fmtDate, plural } from "../components/ui";
 import { Field } from "../components/forms";
 
 const ROUNDS = ["Online assessment", "Coding round", "Technical interview", "HR interview", "Group discussion", "Other"];
@@ -17,7 +17,7 @@ function Difficulty({ n }) {
   );
 }
 
-function ExperienceCard({ e, onHelpful, onDelete }) {
+function ExperienceCard({ e, onHelpful, onDelete, onReport }) {
   return (
     <article className="card p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -49,6 +49,8 @@ function ExperienceCard({ e, onHelpful, onDelete }) {
       <div className="mt-5 flex items-center justify-between border-t border-black/[.05] pt-4 text-xs text-ink-muted">
         <span>{e.author ? `${e.author}` : "Anonymous"} · {e.college} · {fmtDate(e.created_at)}</span>
         <div className="flex items-center gap-2">
+          {!e.mine && <button onClick={() => onReport(e)} disabled={e.reported} className="rounded-full px-2.5 py-1.5 text-xs text-ink-muted hover:bg-rose-50 hover:text-rose-600 disabled:opacity-60" title="Report as inaccurate or outdated">
+            <Flag className="mr-1 inline h-3.5 w-3.5" />{e.reported ? "Reported" : "Report"}</button>}
           {e.mine && <button onClick={() => onDelete(e)} className="rounded-full p-1.5 hover:bg-rose-50 hover:text-rose-600" aria-label="Delete"><Trash2 className="h-4 w-4" /></button>}
           <button onClick={() => onHelpful(e)} className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 transition ${e.marked_helpful ? "bg-brand-600 text-white" : "bg-black/[.04] hover:bg-brand-50 hover:text-brand-700"}`}>
             <ThumbsUp className="h-3.5 w-3.5" /> Helpful · {e.helpful}
@@ -142,6 +144,12 @@ export default function Experiences() {
   const { data: companies, reload: reloadCompanies } = useApi("/experiences/companies");
   const shown = useMemo(() => (data || []).filter((e) => !q || JSON.stringify([e.company, e.role, e.questions, e.topics]).toLowerCase().includes(q.toLowerCase())), [data, q]);
 
+  const report = async (e) => {
+    const reason = window.prompt("What's wrong with this experience? (sent to your placement cell)", "Outdated or inaccurate");
+    if (reason === null) return;
+    await api(`/experiences/${e.id}/report?reason=${encodeURIComponent(reason.trim() || "Outdated or inaccurate")}`, { method: "POST" });
+    setData(data.map((x) => (x.id === e.id ? { ...x, reported: true } : x)));
+  };
   const helpful = async (e) => {
     const r = await api(`/experiences/${e.id}/helpful`, { method: "POST" });
     setData(data.map((x) => (x.id === e.id ? { ...x, ...r } : x)));
@@ -161,13 +169,13 @@ export default function Experiences() {
 
       <div className="mb-8 flex gap-3 overflow-x-auto pb-2 [scrollbar-width:none]">
         <button onClick={() => setParams({})} className={`shrink-0 rounded-2xl border px-5 py-4 text-left transition ${!company ? "border-ink bg-ink text-white" : "border-black/[.06] bg-white hover:border-brand-200"}`}>
-          <div className="text-sm font-medium">All companies</div><div className={`text-xs ${!company ? "text-white/60" : "text-ink-muted"}`}>{(companies || []).reduce((n, c) => n + c.count, 0)} experiences</div>
+          <div className="text-sm font-medium">All companies</div><div className={`text-xs ${!company ? "text-white/60" : "text-ink-muted"}`}>{plural((companies || []).reduce((n, c) => n + c.count, 0), "experience")}</div>
         </button>
         {(companies || []).map((c) => (
           <button key={c.company} onClick={() => setParams({ company: c.company })}
             className={`w-56 shrink-0 rounded-2xl border px-5 py-4 text-left transition ${company === c.company ? "border-ink bg-ink text-white" : "border-black/[.06] bg-white hover:border-brand-200"}`}>
             <div className="truncate text-sm font-medium">{c.company}</div>
-            <div className={`mt-0.5 text-xs ${company === c.company ? "text-white/60" : "text-ink-muted"}`}>{c.count} experiences · difficulty {c.avg_difficulty}/5</div>
+            <div className={`mt-0.5 text-xs ${company === c.company ? "text-white/60" : "text-ink-muted"}`}>{plural(c.count, "experience")} · difficulty {c.avg_difficulty}/5</div>
             <div className="mt-2 truncate text-xs">{c.top_topics.slice(0, 3).join(" · ")}</div>
           </button>
         ))}
@@ -186,7 +194,7 @@ export default function Experiences() {
         <div className="card p-10 text-center text-sm text-ink-muted">No experiences here yet. Be the first to share one.</div>
       ) : (
         <div className="columns-1 gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
-          {shown.map((e, i) => <Reveal key={e.id} delay={(i % 4) * 60}><ExperienceCard e={e} onHelpful={helpful} onDelete={remove} /></Reveal>)}
+          {shown.map((e, i) => <Reveal key={e.id} delay={(i % 4) * 60}><ExperienceCard e={e} onHelpful={helpful} onDelete={remove} onReport={report} /></Reveal>)}
         </div>
       )}
 

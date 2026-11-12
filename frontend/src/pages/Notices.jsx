@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Megaphone, Send } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { Empty, ErrorNote, PageHeader, Spinner, ago, fmtTime, useApi } from "../components/ui";
+import { Empty, ErrorNote, PageHeader, Spinner, ago, fmtTime, useApi, plural } from "../components/ui";
 
 const BRANCHES = ["Computer", "IT", "EXTC", "Electronics", "Mechanical", "AI & DS", "Civil", "Chemical"];
 
@@ -64,7 +64,7 @@ export default function Notices() {
         subtitle={isCollege ? "Verified information to the right students at the same time. Each notice also arrives as a notification." : "Official notices from your placement cell, all in one place instead of scattered across email and WhatsApp."} />
       <div className={isCollege ? "grid gap-6 lg:grid-cols-[1fr_1.3fr]" : ""}>
         {isCollege && <div className="space-y-3"><Compose onSent={(r) => { setSent(r); reload(); }} />
-          {sent && <div className="rounded-xl bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">Sent to {sent.recipients} students ({sent.audience_label}).</div>}</div>}
+          {sent && <div className="rounded-xl bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">Sent to {plural(sent.recipients, "student")} ({sent.audience_label}).</div>}</div>}
         <div className="space-y-4">
           <ErrorNote>{error}</ErrorNote>
           {!data ? <Spinner /> : data.length === 0 ? <div className="card"><Empty>No notices yet.</Empty></div> : data.map((n) => (
@@ -74,7 +74,7 @@ export default function Notices() {
                 <span className="text-xs text-ink-muted" title={fmtTime(n.created_at)}>{ago(n.created_at)}</span>
               </div>
               <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-ink-soft">{n.body}</p>
-              <div className="mt-3 text-xs text-ink-muted">{n.by_name}{isCollege && ` · ${n.audience_label} · ${n.recipients} students`}</div>
+              <div className="mt-3 text-xs text-ink-muted">{n.by_name}{isCollege && ` · ${n.audience_label} · ${plural(n.recipients, "student")}`}</div>
             </article>
           ))}
         </div>

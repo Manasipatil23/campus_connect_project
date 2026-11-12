@@ -204,16 +204,20 @@ async def update_issue(issue_id: str, body: IssuePatch, user: dict = Depends(coo
         raise HTTPException(404, "Issue not found")
     t = now()
     sets, push = {"updated_at": t}, {}
-    if body.assign_to_me or (body.status and not issue.get("owner_id")):
+    if body.assign_to_me or ((body.status or body.reply) and not issue.get("owner_id")):
         sets.update(owner_id=user["id"], owner_name=user["name"])
-    if body.status and body.status != issue["status"]:
-        sets["status"] = body.status
-        push["history"] = {"status": body.status, "at": t, "by": user["name"]}
+    new_status = body.status
+    # picking up or answering an open issue means someone is working on it
+    if not new_status and issue["status"] == "open" and (body.assign_to_me or body.reply):
+        new_status = "in_progress"
+    if new_status and new_status != issue["status"]:
+        sets["status"] = new_status
+        push["history"] = {"status": new_status, "at": t, "by": user["name"]}
     if body.reply:
         push["replies"] = {"text": body.reply, "by": user["name"], "at": t}
     if body.internal_note:
         push["internal_notes"] = {"text": body.internal_note, "by": user["name"], "at": t}
-    student_visible = bool(body.reply or (body.status and body.status != issue["status"]))
+    student_visible = bool(body.reply or "status" in sets)
     if student_visible:
         sets["unread_by_student"] = True
     await db.issues.update_one({"_id": issue["_id"]}, {"$set": sets, **({"$push": push} if push else {})})

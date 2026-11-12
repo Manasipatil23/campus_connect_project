@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Check, Clock, Lightbulb, Lock, Sparkles, X } from "lucide-react";
 import { api } from "../api";
-import { Badge, Bar, ErrorNote, Spinner, useApi, fmtDate } from "../components/ui";
+import { Badge, Bar, ErrorNote, Spinner, useApi, fmtDate, plural } from "../components/ui";
 import { StudentRound } from "../components/workflow";
 
 const STATE_STYLE = {
@@ -12,7 +12,7 @@ const STATE_STYLE = {
   not_reached: { dot: "bg-black/[.06] text-ink-muted", icon: null, text: "—" },
 };
 
-function Timeline({ rounds }) {
+function Timeline({ rounds, status }) {
   return (
     <ol className="grid gap-4 sm:grid-cols-4">
       {rounds.map((r, i) => {
@@ -26,7 +26,7 @@ function Timeline({ rounds }) {
             </span>
             <div>
               <div className="text-sm font-medium">{r.label}</div>
-              <div className="text-xs text-ink-muted">{s.text}{r.at && r.state === "cleared" ? ` · ${fmtDate(r.at)}` : ""}</div>
+              <div className="text-xs text-ink-muted">{r.round === "offer" && r.state === "cleared" && status === "accepted" ? "Accepted" : s.text}{r.at && r.state === "cleared" ? ` · ${fmtDate(r.at)}` : ""}</div>
             </div>
           </li>
         );
@@ -44,7 +44,7 @@ const WEIGHT = {
 function PrivacyNote({ n, what }) {
   return (
     <p className="flex items-center gap-2 text-xs text-ink-muted">
-      <Lock className="h-3.5 w-3.5" /> Compared with {n} students who {what}. Only group statistics are shown — never anyone's resume or name.
+      <Lock className="h-3.5 w-3.5" /> Compared with {plural(n, "student")} who {what}. Only group statistics are shown — never anyone's resume or name.
     </p>
   );
 }
@@ -263,9 +263,14 @@ export default function ApplicationDetail() {
         <ErrorNote>{err}</ErrorNote>
       </div>
 
-      {app.status === "offered" && <OfferBox app={app} drive={drive} onDone={reload} />}
+      {app.drive_cancelled && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+          <b className="font-medium">This drive was cancelled</b>{drive.status_reason ? `: ${drive.status_reason}` : "."} It no longer counts as an application in progress or a placement.
+        </div>
+      )}
+      {app.status === "offered" && !app.drive_cancelled && <OfferBox app={app} drive={drive} onDone={reload} />}
 
-      <div className="card p-6"><Timeline rounds={timeline} /></div>
+      <div className="card p-6"><Timeline rounds={timeline} status={app.status} /></div>
 
       {drive.rounds?.length > 0 && (
         <div className="card p-6">

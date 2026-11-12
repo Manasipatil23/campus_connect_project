@@ -4,14 +4,7 @@ import { BadgeCheck, Check, Eye, Flag, MessageSquare, Send, Trash2, UserCheck, X
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { Badge, Empty, ErrorNote, Modal, PageHeader, Spinner, Tabs, ago, fmtDate, fmtTime, useApi } from "../components/ui";
-import { ActionsPanel, ContactList } from "../components/workflow";
-
-function val(v) {
-  if (v == null) return "—";
-  if (Array.isArray(v)) return v.join(", ");
-  if (typeof v === "object") return v.cancel ? "Cancel round" : [v.date && fmtDate(v.date), v.time, v.venue, v.min_cgpa != null && `CGPA ≥ ${v.min_cgpa}`].filter(Boolean).join(" · ") || "—";
-  return String(v);
-}
+import { ActionsPanel, ChangeLine, ContactList } from "../components/workflow";
 
 /** Requests from the other side waiting for an answer, handled right here. */
 function ConnectionRequests({ isCollege, onChange }) {
@@ -82,7 +75,7 @@ function Changes({ canDecide }) {
             <li key={c.id} className="flex flex-wrap items-center gap-4 px-6 py-4">
               <div className="min-w-0 flex-1">
                 <Link to={`/drives/${c.drive_id}`} className="text-sm font-medium text-brand-700 hover:underline">{c.drive}</Link>
-                <div className="mt-0.5 text-sm"><b className="font-medium">{c.label}:</b> <span className="text-ink-muted line-through">{val(c.old)}</span> → <span className="font-medium">{val(c.new)}</span></div>
+                <div className="mt-0.5 text-sm"><b className="font-medium">{c.label}</b><ChangeLine oldV={c.old} newV={c.new} field={c.field} /></div>
                 <div className="mt-0.5 text-xs text-ink-muted">{c.proposed_by_name} · {ago(c.created_at)}{c.reason && ` · “${c.reason}”`}</div>
               </div>
               {canDecide ? (
@@ -115,7 +108,9 @@ function Issues() {
     setErr(null);
     try {
       const fresh = await api(`/issues/${sel.id}`, { method: "PATCH", body });
-      setSel(fresh); setReply(""); setNote(""); reload();
+      setSel(fresh); reload();
+      if (body.reply) setReply("");
+      if (body.internal_note) setNote("");
     } catch (e) { setErr(e.message); }
   };
   return (
@@ -142,7 +137,7 @@ function Issues() {
       <Modal open={Boolean(sel)} onClose={() => setSel(null)} wide title={sel?.subject || ""}>
         {sel && (
           <div className="space-y-5 text-sm">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted"><Badge value={sel.status} label={sel.status_label} /> {sel.category} · {sel.student_name} · raised {fmtTime(sel.created_at)}</div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted"><Badge value={sel.status} label={sel.status_label} /> {sel.category} · {sel.student_name} · raised {fmtTime(sel.created_at)}{sel.owner_name && ` · handled by ${sel.owner_name}`}</div>
             <p className="rounded-xl bg-black/[.03] p-4">{sel.description}</p>
             {sel.replies?.length > 0 && <div><div className="mb-2 text-xs font-medium text-ink-muted">Replies (visible to the student)</div>
               {sel.replies.map((r, k) => <div key={k} className="mb-2 rounded-xl bg-brand-50/60 p-3">{r.text}<div className="mt-1 text-xs text-ink-muted">{r.by} · {ago(r.at)}</div></div>)}</div>}
@@ -184,7 +179,7 @@ function Moderation() {
   if (!data) return <Spinner />;
   return (
     <div className="space-y-4">
-      <p className="text-sm text-ink-muted">Experiences are preparation material, not official announcements. Approved posts are published anonymised.</p>
+      <p className="text-sm text-ink-muted">Experiences are preparation material, not official announcements. Approved posts go live for students; posts marked anonymous never show the author's name.</p>
       <ErrorNote>{err}</ErrorNote>
       {data.length === 0 ? <div className="card"><Empty>Nothing to moderate.</Empty></div> : data.map((e) => (
         <div key={e.id} className="card p-6">

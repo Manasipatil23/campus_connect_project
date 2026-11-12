@@ -15,6 +15,7 @@ from pymongo.errors import DuplicateKeyError
 from ..auth import create_token, current_user, hash_password, verify_password
 from ..db import db, serialize
 from ..emailing import check_email, consume_code, domain_of, issue_code
+from ..workflow import admins, college_staff, notify
 from ..schemas import CollegeSignupIn, CompanySignupIn, LoginIn, SendCodeIn, StudentSignupIn
 
 router = APIRouter(prefix="/api", tags=["auth"])
@@ -102,6 +103,8 @@ async def register_student(body: StudentSignupIn):
         "profile": {"branch": body.branch, "grad_year": body.grad_year},
         "placement": {"status": "unplaced"},
     })
+    await notify(await college_staff(body.college_id), "New student sign-up",
+                 f"{doc['name']} ({body.branch}, {body.roll_number.strip().upper()}) is waiting for approval.", "/students", "students")
     return await _session(doc)
 
 
@@ -124,6 +127,7 @@ async def register_college(body: CollegeSignupIn):
         "password_hash": hash_password(body.password), "role": "coordinator", "status": "pending",
         "college_id": college_id,
     })
+    await notify(await admins(), "New college to verify", f"{body.name}, {body.city}", "/approvals/colleges", "approval")
     return await _session(doc)
 
 
@@ -147,6 +151,7 @@ async def register_company(body: CompanySignupIn):
         "password_hash": hash_password(body.password), "role": "recruiter", "status": "pending",
         "company_id": company_id, "company": body.name,
     })
+    await notify(await admins(), "New company to verify", f"{body.name}, {body.hq_city}", "/approvals/companies", "approval")
     return await _session(doc)
 
 

@@ -6,7 +6,7 @@ import {
 import { api } from "../api";
 import { AtsBreakdown, Review } from "../components/AtsBreakdown";
 import { Badge, ErrorNote, Modal, Spinner, fmtDate, useApi } from "../components/ui";
-import { ContactList, DriveFlow, HistoryPanel, StudentRound } from "../components/workflow";
+import { ChangeLine, ContactList, DriveFlow, HistoryPanel, StudentRound } from "../components/workflow";
 
 const FIELD_LABEL = { description: "Job description", ctc_lpa: "CTC (LPA)", location: "Location", deadline: "Deadline", criteria: "Eligibility", required_skills: "Required skills", preferred_skills: "Preferred skills", role: "Role", tier: "Tier" };
 const ROUND_KINDS = ["Online assessment", "Group discussion", "Technical interview", "HR interview", "Other"];
@@ -268,7 +268,7 @@ function StaffView({ d, reload }) {
                 <li key={c.id} className="flex flex-wrap items-center gap-4 py-3 first:pt-0 last:pb-0">
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium">{c.label}</div>
-                    <div className="mt-0.5 text-sm"><span className="text-ink-muted line-through">{val(c.old)}</span> <span className="mx-1 text-ink-muted">→</span> <span className="font-medium">{val(c.new)}</span></div>
+                    <ChangeLine oldV={c.old} newV={c.new} field={c.field} className="mt-0.5 text-sm" />
                     <div className="mt-0.5 text-xs text-ink-muted">Proposed by {c.proposed_by_name}{c.reason && ` — “${c.reason}”`}</div>
                   </div>
                   {d.can.decide_changes ? (

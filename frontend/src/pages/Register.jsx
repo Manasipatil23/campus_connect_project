@@ -89,6 +89,7 @@ function StudentSignup() {
       phone: (v) => check(v, "phone"), grad_year: (v) => (v >= 2020 && v <= 2035 ? null : "Enter your graduation year"),
     })) return;
     if (step === 2 && !validate({ code: (v) => (/^\d{6}$/.test(v) ? null : "Enter the 6-digit code from your email") })) return;
+    if (!f.email_domain && domainFromUrl(f.website)) setF((x) => ({ ...x, email_domain: domainFromUrl(x.website) }));
     setStep(step + 1);
   };
   const submit = async (e) => {
@@ -177,7 +178,7 @@ function CollegeSignup() {
       nirf_rank: (v) => (!v || (v >= 1 && v <= 1000) ? null : "NIRF rank is 1–1000"),
     })) return;
     if (step === 1 && !validate({
-      website: (v) => check(v, "url"), email_domain: (v) => check(v, "domain"),
+      website: (v) => check(v, "url"), email_domain: (v, x) => check(v || domainFromUrl(x.website), "domain"),
       student_email_domain: (v) => (!v ? null : check(v, "domain")),
       address: (v) => (v.trim().length >= 10 ? null : "Enter the full address"), city: req("City"), state: req("State"),
       pincode: (v) => check(v, "pincode"), phone: (v) => check(v, "landline"),
@@ -186,6 +187,7 @@ function CollegeSignup() {
       tpo_name: req("Name"), tpo_designation: req("Designation"), tpo_phone: (v) => check(v, "phone"),
       code: (v) => (/^\d{6}$/.test(v) ? null : "Verify your official email"),
     })) return;
+    if (!f.email_domain && domainFromUrl(f.website)) setF((x) => ({ ...x, email_domain: domainFromUrl(x.website) }));
     setStep(step + 1);
   };
   const submit = async (e) => {
@@ -226,9 +228,9 @@ function CollegeSignup() {
           <Field label="Official website" error={errors.website} className="sm:col-span-2">
             <input className="input" placeholder="https://www.yourcollege.edu.in" value={f.website}
               onChange={(e) => { const w = e.target.value; setF((x) => ({ ...x, website: w, email_domain: x.email_domain || "" })); }}
-              onBlur={() => !f.email_domain && setF((x) => ({ ...x, email_domain: domainFromUrl(x.website) }))} />
+              />
           </Field>
-          <Field label="Official email domain" error={errors.email_domain} hint="Staff emails end with this"><input className="input" value={f.email_domain} onChange={set("email_domain")} /></Field>
+          <Field label="Official email domain" error={errors.email_domain} hint="Staff emails end with this"><input className="input" placeholder={domainFromUrl(f.website) || "college.edu.in"} value={f.email_domain} onChange={set("email_domain")} onFocus={(e) => { const d = domainFromUrl(f.website); if (!f.email_domain && d) { const el = e.target; setF((x) => ({ ...x, email_domain: d })); requestAnimationFrame(() => el.select()); } }} /></Field>
           <Field label="Student email domain (optional)" error={errors.student_email_domain} hint="If set, students must sign up with it"><input className="input" placeholder={f.email_domain ? `student.${f.email_domain}` : ""} value={f.student_email_domain} onChange={set("student_email_domain")} /></Field>
           <Field label="Address" error={errors.address} className="sm:col-span-2"><input className="input" value={f.address} onChange={set("address")} /></Field>
           <Field label="City" error={errors.city}><input className="input" value={f.city} onChange={set("city")} /></Field>
@@ -276,7 +278,7 @@ function CompanySignup() {
   const steps = ["Company", "Hiring contact", "Password"];
   const next = () => {
     if (step === 0 && !validate({
-      name: req("Company name"), website: (v) => check(v, "url"), email_domain: (v) => check(v, "domain"),
+      name: req("Company name"), website: (v) => check(v, "url"), email_domain: (v, x) => check(v || domainFromUrl(x.website), "domain"),
       industry: req("Industry"), size: req("Company size"), hq_city: req("Headquarters city"),
       cin: (v, x) => (!v && !x.gstin ? "Enter your CIN or GSTIN" : v ? check(v, "cin") : null),
       gstin: (v) => (v ? check(v.toUpperCase(), "gstin") : null),
@@ -286,6 +288,7 @@ function CompanySignup() {
       hr_name: req("Name"), hr_designation: req("Designation"), hr_phone: (v) => check(v, "phone"),
       code: (v) => (/^\d{6}$/.test(v) ? null : "Verify your work email"),
     })) return;
+    if (!f.email_domain && domainFromUrl(f.website)) setF((x) => ({ ...x, email_domain: domainFromUrl(x.website) }));
     setStep(step + 1);
   };
   const submit = async (e) => {
@@ -308,9 +311,9 @@ function CompanySignup() {
           <Field label="Company name" error={errors.name}><input className="input" value={f.name} onChange={set("name")} /></Field>
           <Field label="Website" error={errors.website}>
             <input className="input" placeholder="https://www.company.com" value={f.website} onChange={set("website")}
-              onBlur={() => !f.email_domain && setF((x) => ({ ...x, email_domain: domainFromUrl(x.website) }))} />
+              />
           </Field>
-          <Field label="Work email domain" error={errors.email_domain} hint="Your team's emails end with this"><input className="input" value={f.email_domain} onChange={set("email_domain")} /></Field>
+          <Field label="Work email domain" error={errors.email_domain} hint="Your team's emails end with this"><input className="input" placeholder={domainFromUrl(f.website) || "company.com"} value={f.email_domain} onChange={set("email_domain")} onFocus={(e) => { const d = domainFromUrl(f.website); if (!f.email_domain && d) { const el = e.target; setF((x) => ({ ...x, email_domain: d })); requestAnimationFrame(() => el.select()); } }} /></Field>
           <Field label="Industry" error={errors.industry}><input className="input" placeholder="Fintech, SaaS, Manufacturing…" value={f.industry} onChange={set("industry")} /></Field>
           <Field label="Company size" error={errors.size}>
             <select className="input" value={f.size} onChange={set("size")}><option value="">Select…</option>{["1-50", "51-200", "201-1000", "1001-5000", "5000+"].map((x) => <option key={x}>{x}</option>)}</select>

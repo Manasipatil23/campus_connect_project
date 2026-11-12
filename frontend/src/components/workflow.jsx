@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { AlertCircle, ArrowRight, CalendarClock, CheckCircle2, Circle, Clock, History, Inbox, Mail, Phone } from "lucide-react";
-import { Badge, Empty, ago, fmtDate, useApi } from "./ui";
+import { Badge, Empty, ago, fmtDate, useApi, plural } from "./ui";
 
 /** The steps of the shared drive workflow, so every portal shows where a drive is. */
 const FLOW = [
@@ -49,7 +49,7 @@ export function ActionsPanel({ title = "Needs your attention", compact }) {
       <div className="mb-4 flex items-center gap-2">
         <Inbox className="h-4 w-4 text-brand-600" />
         <h2 className="font-medium">{title}</h2>
-        <span className="ml-auto text-xs text-ink-muted">{data.length ? `${data.reduce((a, x) => a + x.count, 0)} items` : ""}</span>
+        <span className="ml-auto text-xs text-ink-muted">{data.length ? plural(data.reduce((a, x) => a + x.count, 0), "item") : ""}</span>
       </div>
       {data.length === 0 ? <p className="text-sm text-ink-muted">Nothing waiting on you. Everything is up to date.</p> : (
         <ul className={`grid gap-2 ${compact ? "" : "sm:grid-cols-2"}`}>
@@ -120,11 +120,7 @@ export function HistoryList({ rows, students }) {
             <span className="font-medium">{h.summary}</span>
             {h.approval && APPROVAL[h.approval] && <span className={`chip ${APPROVAL[h.approval][1]}`}>{APPROVAL[h.approval][0]}</span>}
           </div>
-          {(h.old != null || h.new != null) && h.field !== "status" && (
-            <div className="mt-1 text-xs text-ink-muted">
-              <span className="line-through">{show(h.old)}</span> <ArrowRight className="mx-1 inline h-3 w-3" /> <span className="text-ink">{show(h.new)}</span>
-            </div>
-          )}
+          {(h.old != null || h.new != null) && h.field !== "status" && <ChangeLine oldV={h.old} newV={h.new} field={h.field} className="mt-1 text-xs" />}
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
             {!students && <span className={`chip ${PORTAL_STYLE[h.portal] || PORTAL_STYLE.system}`}>{h.portal}</span>}
             <span>{h.by_name}</span><span>·</span><span title={new Date(h.at).toLocaleString()}>{ago(h.at)}</span>
@@ -157,11 +153,54 @@ export function ContactList({ contacts, dark }) {
         <li key={c.email} className="text-sm">
           <div className="font-medium">{c.name}<span className={`font-normal ${muted}`}>{c.designation ? ` · ${c.designation}` : ""}</span></div>
           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
-            <a href={`mailto:${c.email}`} className={`inline-flex items-center gap-1.5 ${link}`}><Mail className="h-3.5 w-3.5" />{c.email}</a>
-            {c.phone && <a href={`tel:${c.phone}`} className={`inline-flex items-center gap-1.5 ${link}`}><Phone className="h-3.5 w-3.5" />{c.phone}</a>}
+            <a href={`mailto:${c.email}`} className={`inline-flex min-w-0 max-w-full items-center gap-1.5 ${link}`}><Mail className="h-3.5 w-3.5 shrink-0" /><span className="[overflow-wrap:anywhere]">{c.email.split("@")[0]}@<wbr />{c.email.split("@")[1]}</span></a>
+            {c.phone && <a href={`tel:${c.phone}`} className={`inline-flex items-center gap-1.5 ${link}`}><Phone className="h-3.5 w-3.5 shrink-0" />{c.phone}</a>}
           </div>
         </li>
       ))}
     </ul>
+  );
+}
+
+// ---- describing a change: only the parts that actually differ -------------------
+const PART_LABEL = {
+  min_cgpa: "Min CGPA", max_backlogs: "Max backlogs", branches: "Branches", grad_years: "Batch",
+  date: "Date", time: "Time", venue: "Venue", cancel: "Cancelled",
+};
+const isDate = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+export function plain(v) {
+  if (v == null || v === "" || (Array.isArray(v) && !v.length)) return "—";
+  if (Array.isArray(v)) return v.join(", ");
+  if (typeof v === "boolean") return v ? "yes" : "no";
+  if (isDate(v)) return fmtDate(v);
+  if (typeof v === "object") return Object.entries(v).filter(([, x]) => x != null && !(Array.isArray(x) && !x.length)).map(([k, x]) => `${PART_LABEL[k] || k}: ${plain(x)}`).join(" · ") || "—";
+  return String(v);
+}
+/** [{label, from, to}] — for objects (eligibility, round schedule) only the keys that changed. */
+export function changedParts(oldV, newV) {
+  const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+  if (isObj(oldV) || isObj(newV)) {
+    const o = oldV || {}, n = newV || {};
+    const keys = [...new Set([...Object.keys(o), ...Object.keys(n)])];
+    const parts = keys.filter((k) => JSON.stringify(o[k] ?? null) !== JSON.stringify(n[k] ?? null))
+      .map((k) => ({ label: PART_LABEL[k] || k, from: plain(o[k]), to: plain(n[k]) }));
+    return parts.length ? parts : [{ label: null, from: plain(oldV), to: plain(newV) }];
+  }
+  return [{ label: null, from: plain(oldV), to: plain(newV) }];
+}
+const UNIT = { ctc_lpa: (v) => (v === "—" ? v : `${v} LPA`) };
+export function ChangeLine({ oldV, newV, field, className = "" }) {
+  const unit = UNIT[field] || ((v) => v);
+  return (
+    <div className={`space-y-0.5 ${className}`}>
+      {changedParts(oldV, newV).map((p) => ({ ...p, from: unit(p.from), to: unit(p.to) })).map((p, i) => (
+        <div key={i}>
+          {p.label && <span className="text-ink-muted">{p.label}: </span>}
+          <span className="text-ink-muted line-through">{p.from}</span>
+          <span className="mx-1 text-ink-muted">→</span>
+          <span className="font-medium text-ink">{p.to}</span>
+        </div>
+      ))}
+    </div>
   );
 }

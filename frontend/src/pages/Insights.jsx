@@ -123,7 +123,9 @@ export default function Insights() {
         <div className="card p-6">
           <h2 className="font-medium">Assessment sections</h2>
           <p className="mb-2 mt-1 text-xs text-ink-muted">Your average vs. students who cleared, across your tests.</p>
-          {a.sections.length === 0 ? <p className="py-10 text-center text-sm text-ink-muted">No assessment scores yet.</p> : (
+          {a.sections.length === 0 ? <p className="py-10 text-center text-sm text-ink-muted">{a.assessments_hidden > 0
+            ? "Your scores are recorded, but fewer than 3 students cleared those tests, so comparisons stay hidden to protect their privacy."
+            : "No assessment scores yet."}</p> : (
             <ResponsiveContainer width="100%" height={240}>
               <RadarChart data={a.sections} outerRadius="72%">
                 <PolarGrid stroke="#ece6ff" />

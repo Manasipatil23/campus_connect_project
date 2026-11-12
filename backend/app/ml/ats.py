@@ -133,7 +133,7 @@ def score_resume(
         # nothing to compare against: don't invent a similarity, re-weight the rest
         weights = {"skills": 0.45, "similarity": 0.0, "structure": 0.35, "impact": 0.20}
         raw = 0.45 * coverage + 0.35 * structure + 0.20 * impact
-    score = max(0.0, min(100.0, round(100 * (raw - length_penalty), 1)))
+    score = int(max(0, min(100, round(100 * (raw - length_penalty)))))  # whole number, shown the same everywhere
 
     return {
         "score": score,

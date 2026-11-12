@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from ..auth import require_role
 from ..db import db, serialize
 from ..schemas import DecisionIn
-from ..workflow import record_approval
+from ..workflow import email_decision, record_approval
 from .drives import oid
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -75,6 +75,9 @@ async def _decide(coll: str, user_field: str, org_id: str, body: DecisionIn, adm
     await record_approval(kind="college" if coll == "colleges" else "company", target_id=org_id, name=org["name"],
                           email=(contact or {}).get("email"), decision=body.decision, by=admin, note=body.note,
                           tier=update.get("tier"))
+    full = await db.users.find_one({user_field: org_id, "role": {"$in": ["coordinator", "recruiter"]}}, {"email": 1, "name": 1})
+    await email_decision((full or {}).get("email"), (full or {}).get("name"), status == "approved",
+                         f"{'college' if coll == 'colleges' else 'company'} registration for {org['name']}", body.note, admin)
     return {"id": org_id, **update}
 
 

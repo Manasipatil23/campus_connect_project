@@ -28,7 +28,7 @@ function AuthSwitch({ mode }) {
 export function AuthShell({ title, accent, subtitle, children, wide, mode }) {
   return (
     <div className="grid min-h-screen xl:grid-cols-[minmax(420px,.75fr)_1fr]">
-      <aside className="relative hidden overflow-hidden bg-ink xl:block">
+      <aside className="relative hidden overflow-hidden bg-ink xl:sticky xl:top-0 xl:block xl:h-screen xl:self-start">
         <div aria-hidden className="absolute inset-0 bg-[radial-gradient(520px_360px_at_30%_15%,rgba(139,92,246,.35),transparent_70%)]" />
         <div className="absolute inset-0 bg-gradient-to-bl from-brand-900/40 via-transparent to-transparent" />
         <div className="relative flex h-full flex-col p-12 text-white">

@@ -81,8 +81,9 @@ async def match_drive(drive_id: str, user: dict = Depends(student_only)):
     resume = user.get("resume")
     if not resume:
         raise HTTPException(400, "Upload a resume first")
-    drive = await db.drives.find_one({"_id": ObjectId(drive_id)})
-    if not drive:
+    drive = await db.drives.find_one({"_id": oid(drive_id)})
+    if (not drive or drive.get("college_id") != user.get("college_id")
+            or drive.get("status") not in ("published", "in_progress", "completed")):
         raise HTTPException(404, "Drive not found")
     ats = score_resume(resume["text"], drive["description"], drive.get("required_skills"))
     review = await run_in_threadpool(review_resume, resume["text"], ats, drive["description"])
@@ -289,6 +290,8 @@ async def withdraw(app_id: str, user: dict = Depends(student_only)):
     await db.applications.update_one({"_id": app["_id"]}, {"$set": {"status": "withdrawn", "updated_at": t},
                                                            "$push": {"history": {"status": "withdrawn", "at": t, "by": "student"}}})
     await notify(await drive_company_staff(drive), "Candidate withdrew", drive_label(drive), f"/drives/{app['drive_id']}/candidates", "application")
+    await notify(await college_staff(drive["college_id"]), "Student withdrew", f"{user['name']} · {drive_label(drive)}",
+                 f"/drives/{app['drive_id']}", "application")
     await log_update(entity="application", entity_id=app_id, drive_id=app["drive_id"], college_id=drive["college_id"],
                      company_id=drive.get("company_id"), action="stage", field="status", old=app["status"], new="withdrawn",
                      summary="Candidate withdrew", by=user, extra={"student_id": user["id"]})
@@ -303,6 +306,8 @@ async def respond_offer(app_id: str, body: OfferResponseIn, user: dict = Depends
     if app["status"] != "offered":
         raise HTTPException(400, "There's no open offer on this application")
     drive = await get_drive(app["drive_id"])
+    if app.get("drive_cancelled") or drive.get("status") == "cancelled":
+        raise HTTPException(400, "This drive was cancelled")
     new = "accepted" if body.decision == "accept" else "declined"
     t = now()
     await db.applications.update_one({"_id": app["_id"]}, {"$set": {"status": new, "updated_at": t},

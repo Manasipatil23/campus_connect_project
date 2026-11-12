@@ -223,3 +223,6 @@ export function ago(d) {
   if (s < 86400 * 7) return `${Math.floor(s / 86400)}d ago`;
   return fmtDate(d);
 }
+
+/** "1 student", "3 students" */
+export const plural = (n, word, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;

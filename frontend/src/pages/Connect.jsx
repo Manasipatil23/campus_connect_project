@@ -4,7 +4,7 @@ import { BadgeCheck, Check, Clock, Handshake, MapPin, MessageSquare, Search, Sen
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { Reveal, Tilt } from "../components/fx/motion";
-import { ErrorNote, Modal, PageHeader, Spinner, Tabs, ago, useApi } from "../components/ui";
+import { ErrorNote, Modal, PageHeader, Spinner, Tabs, ago, useApi, plural } from "../components/ui";
 import { ContactList } from "../components/workflow";
 
 const KIND_LABEL = { info_request: "Asked for more information", date_confirmation: "Date confirmation", document_request: "Document request" };
@@ -179,8 +179,8 @@ export default function Connect() {
                       {isCollege ? o.about : `NAAC ${o.naac_grade || "—"} · ${o.institution_type || ""}`}
                     </p>
                     <div className="mt-4 flex items-center gap-4 text-xs text-ink-muted">
-                      {isCollege ? <span>{o.industry} · {o.drives_posted} drives on Campus Connect</span>
-                        : <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{o.students} students on Campus Connect</span>}
+                      {isCollege ? <span>{o.industry} · {plural(o.drives_posted, "drive")} on Campus Connect</span>
+                        : <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{plural(o.students, "student")} on Campus Connect</span>}
                     </div>
                     {conn?.status === "accepted" && conn.contacts?.length > 0 && (
                       <div className="mt-4 rounded-xl bg-brand-50/50 p-3"><ContactList contacts={conn.contacts} /></div>

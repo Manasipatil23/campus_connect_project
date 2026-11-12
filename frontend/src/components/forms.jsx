@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, Children, cloneElement, isValidElement, useId } from "react";
 import { Check, Eye, EyeOff, Loader2, MailCheck } from "lucide-react";
 import { api } from "../api";
 
@@ -34,10 +34,14 @@ export function domainFromUrl(url) {
 }
 
 export function Field({ label, error, hint, children, className = "" }) {
+  // link the label to its input so clicking it focuses the field and screen readers announce it
+  const auto = useId();
+  const only = Children.count(children) === 1 && isValidElement(children) ? children : null;
+  const id = only?.props.id || auto;
   return (
     <div className={className}>
-      <label className="label">{label}</label>
-      {children}
+      <label className="label" htmlFor={only ? id : undefined}>{label}</label>
+      {only ? cloneElement(only, { id, "aria-invalid": error ? true : undefined }) : children}
       {error ? <p className="mt-1 text-xs text-rose-600">{error}</p> : hint ? <p className="mt-1 text-xs text-ink-muted">{hint}</p> : null}
     </div>
   );

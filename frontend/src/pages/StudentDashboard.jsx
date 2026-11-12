@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, BarChart3, CalendarClock, ChevronRight, PartyPopper, TrendingDown } from "lucide-react";
 import { useAuth } from "../auth";
-import { Badge, ErrorNote, ScoreRing, Spinner, fmtDate, useApi } from "../components/ui";
+import { Badge, ErrorNote, ScoreRing, Spinner, fmtDate, plural, useApi } from "../components/ui";
 
 /**
  * The student's first screen: only what needs attention now.
@@ -69,8 +69,8 @@ export default function StudentDashboard() {
             Hi {user.name.split(" ")[0]}, <span className="accent">here's today.</span>
           </h1>
           <p className="mt-3 text-ink-muted">
-            {s.applications} applications · {s.in_progress} in progress · {s.offers} offer{s.offers === 1 ? "" : "s"}
-            {d.eligible_open_drives > 0 && <> · <Link to="/drives" className="text-brand-700 hover:underline">{d.eligible_open_drives} open drive{d.eligible_open_drives === 1 ? "" : "s"} you can apply to</Link></>}
+            {plural(s.applications, "application")} · {s.in_progress} in progress · {plural(s.offers, "offer")}
+            {d.eligible_open_drives > 0 && <> · <Link to="/drives" className="text-brand-700 hover:underline">{plural(d.eligible_open_drives, "open drive")} you can apply to</Link></>}
           </p>
         </div>
         <Link to="/insights" className="card flex items-center gap-4 px-5 py-4 transition hover:border-brand-200">
