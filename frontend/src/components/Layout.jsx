@@ -66,6 +66,7 @@ const NAV = {
   student: [
     { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
     { to: "/drives", label: "Drives", icon: Briefcase },
+    { to: "/insights", label: "Insights", icon: BarChart3 },
     { to: "/notices", label: "Notices", icon: Megaphone },
     { to: "/experiences", label: "Experiences", icon: MessageSquareQuote },
     { to: "/resume", label: "Resume", icon: FileText },
