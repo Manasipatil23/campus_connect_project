@@ -216,6 +216,15 @@ async def my_connections(user: dict = Depends(org_member)):
     async for row in db.messages.aggregate([{"$match": {field: mine, "from_side": {"$ne": me_side}, "read_" + me_side: {"$ne": True}}},
                                             {"$group": {"_id": "$connection_id", "n": {"$sum": 1}}}]):
         unread[row["_id"]] = row["n"]
-    return [{**serialize(c), "other": serialize(others[c[other_field]]) if c[other_field] in others else None,
-             "incoming": c["requested_by"] != me_side, "status_label": CONNECTION_STATUS.get(c["status"], c["status"]),
-             "unread": unread.get(str(c["_id"]), 0)} for c in conns]
+    from .org import contacts_of
+    other_kind = "company" if me_side == "college" else "college"
+    out = []
+    for c in conns:
+        incoming = c["requested_by"] != me_side
+        # a request carries the requester's contact; both sides see each other once accepted
+        share = c["status"] == "accepted" or (c["status"] == "pending" and incoming)
+        out.append({**serialize(c), "other": serialize(others[c[other_field]]) if c[other_field] in others else None,
+                    "incoming": incoming, "status_label": CONNECTION_STATUS.get(c["status"], c["status"]),
+                    "unread": unread.get(str(c["_id"]), 0),
+                    "contacts": await contacts_of(other_kind, c[other_field]) if share else None})
+    return out

@@ -79,6 +79,7 @@ const NAV = {
     { to: "/connect", label: "Colleges", icon: Handshake },
     { to: "/drives", label: "My drives", icon: Briefcase },
     { to: "/drives/new", label: "New drive", icon: PlusCircle, end: true },
+    { to: "/profile", label: "Company profile", icon: User },
   ],
   coordinator: [
     { to: "/", label: "Analytics", icon: BarChart3, end: true },
@@ -87,6 +88,7 @@ const NAV = {
     { to: "/students", label: "Students", icon: Users },
     { to: "/connect", label: "Companies", icon: Handshake },
     { to: "/notices", label: "Notices", icon: Megaphone },
+    { to: "/profile", label: "College profile", icon: User },
   ],
   admin: [
     { to: "/", label: "Approvals", icon: ShieldCheck, end: true },
@@ -96,6 +98,9 @@ const ROLE_LABEL = { student: "Student", recruiter: "Company", coordinator: "Pla
 
 export default function Layout() {
   const { user, signOut } = useAuth();
+  const { pathname } = useLocation();
+  // "My drives" (/drives) shouldn't also light up on its sibling "New drive" (/drives/new)
+  const hasOwnItem = (to) => to === "/drives" && pathname === "/drives/new";
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const items = NAV[user.role] || [];
@@ -108,9 +113,9 @@ export default function Layout() {
       <nav className="flex flex-col gap-1" aria-label="Main">
         {items.map(({ to, label, icon: Icon, end }) => (
           <NavLink key={to} to={to} end={end} onClick={() => setOpen(false)}
-            className={({ isActive }) =>
+            className={({ isActive: matched }) => { const isActive = matched && !hasOwnItem(to); return (
               `flex items-center gap-3 rounded-full px-4 py-2.5 text-sm transition ${
-                isActive ? "bg-brand-800 text-white shadow-[0_8px_22px_-10px_rgba(91,33,182,.7)]" : "text-ink-soft hover:bg-white hover:text-ink"}`}>
+                isActive ? "bg-brand-800 text-white shadow-[0_8px_22px_-10px_rgba(91,33,182,.7)]" : "text-ink-soft hover:bg-white hover:text-ink"}`); }}>
             <Icon className="h-4 w-4 shrink-0" /> {label}
           </NavLink>
         ))}

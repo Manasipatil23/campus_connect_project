@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { AlertCircle, ArrowRight, CalendarClock, CheckCircle2, Circle, Clock, History, Inbox } from "lucide-react";
+import { AlertCircle, ArrowRight, CalendarClock, CheckCircle2, Circle, Clock, History, Inbox, Mail, Phone } from "lucide-react";
 import { Badge, Empty, ago, fmtDate, useApi } from "./ui";
 
 /** The steps of the shared drive workflow, so every portal shows where a drive is. */
@@ -143,5 +143,25 @@ export function HistoryPanel({ driveId, students }) {
       <div className="mb-5 flex items-center gap-2"><History className="h-4 w-4 text-brand-600" /><h2 className="font-medium">Update history</h2></div>
       <HistoryList rows={data} students={students} />
     </div>
+  );
+}
+
+/** Contact people at the other organisation (only ever shown to connected companies/colleges). */
+export function ContactList({ contacts, dark }) {
+  if (!contacts?.length) return null;
+  const muted = dark ? "text-white/60" : "text-ink-muted";
+  const link = dark ? "text-white hover:text-brand-200" : "text-brand-700 hover:underline";
+  return (
+    <ul className="space-y-3">
+      {contacts.map((c) => (
+        <li key={c.email} className="text-sm">
+          <div className="font-medium">{c.name}<span className={`font-normal ${muted}`}>{c.designation ? ` · ${c.designation}` : ""}</span></div>
+          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+            <a href={`mailto:${c.email}`} className={`inline-flex items-center gap-1.5 ${link}`}><Mail className="h-3.5 w-3.5" />{c.email}</a>
+            {c.phone && <a href={`tel:${c.phone}`} className={`inline-flex items-center gap-1.5 ${link}`}><Phone className="h-3.5 w-3.5" />{c.phone}</a>}
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }

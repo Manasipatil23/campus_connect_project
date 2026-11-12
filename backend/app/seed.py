@@ -575,6 +575,7 @@ async def main():
             "status": status, "created_at": NOW - timedelta(days=150 - i * 10 if status == "approved" else 1)})).inserted_id)
         company_ids.append(cid)
         res = await db.users.insert_one({"name": rname, "designation": "Campus Hiring Lead", "email": email,
+                                         "phone": f"98{20030000 + i * 1111}",
                                          "password_hash": hash_password("recruiter123"), "role": "recruiter",
                                          "status": "active" if status == "approved" else "pending",
                                          "company": company, "company_id": cid, "created_at": NOW})

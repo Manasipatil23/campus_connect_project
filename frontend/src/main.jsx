@@ -28,6 +28,7 @@ import Inbox from "./pages/Inbox";
 import Notices from "./pages/Notices";
 import Help from "./pages/Help";
 import Insights from "./pages/Insights";
+import OrgProfile from "./pages/OrgProfile";
 
 function Root() {
   const { user, loading } = useAuth();
@@ -67,7 +68,7 @@ function App() {
         <Route path="insights" element={<ByRole student={<Insights />} />} />
         <Route path="applications/:id" element={<ByRole student={<ApplicationDetail />} />} />
         <Route path="resume" element={<ByRole student={<Resume />} />} />
-        <Route path="profile" element={<ByRole student={<Profile />} />} />
+        <Route path="profile" element={<ByRole student={<Profile />} recruiter={<OrgProfile />} coordinator={<OrgProfile />} />} />
         <Route path="experiences" element={<ByRole student={<Experiences />} />} />
         <Route path="students" element={<ByRole coordinator={<CollegeStudents />} />} />
         <Route path="connect" element={<ByRole coordinator={<Connect />} recruiter={<Connect />} />} />

@@ -6,7 +6,7 @@ import {
 import { api } from "../api";
 import { AtsBreakdown, Review } from "../components/AtsBreakdown";
 import { Badge, ErrorNote, Modal, Spinner, fmtDate, useApi } from "../components/ui";
-import { DriveFlow, HistoryPanel, StudentRound } from "../components/workflow";
+import { ContactList, DriveFlow, HistoryPanel, StudentRound } from "../components/workflow";
 
 const FIELD_LABEL = { description: "Job description", ctc_lpa: "CTC (LPA)", location: "Location", deadline: "Deadline", criteria: "Eligibility", required_skills: "Required skills", preferred_skills: "Preferred skills", role: "Role", tier: "Tier" };
 const ROUND_KINDS = ["Online assessment", "Group discussion", "Technical interview", "HR interview", "Other"];
@@ -332,6 +332,12 @@ function StaffView({ d, reload }) {
           {d.can.set_status && ["published", "in_progress"].includes(d.status) && <button className="btn-ghost w-full" onClick={() => setModal({ status: "completed" })}>Mark completed</button>}
           {d.can.set_status && <button className="w-full text-xs text-rose-600 hover:underline" onClick={() => setModal({ status: "cancelled" })}>Cancel drive</button>}
         </div>
+        {d.contacts?.length > 0 && (
+          <div className="card p-6">
+            <div className="mb-3 font-medium">{isCollege ? "Company contact" : "Placement cell contact"}</div>
+            <ContactList contacts={d.contacts} />
+          </div>
+        )}
         <div className="card p-6 text-sm">
           <div className="mb-3 font-medium">Who owns what</div>
           <ul className="space-y-2 text-ink-muted">

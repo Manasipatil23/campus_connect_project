@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import CORS_ORIGINS
 from .db import db, ensure_indexes
 from .ml.health import model
-from .routers import admin, analytics, auth, college, drives, experiences, hub, students
+from .routers import admin, analytics, auth, college, drives, experiences, hub, org, students
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("campus_connect")
@@ -38,7 +38,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for r in (auth, students, drives, analytics, admin, college, experiences, hub):
+for r in (auth, students, drives, analytics, admin, college, experiences, hub, org):
     app.include_router(r.router)
 
 

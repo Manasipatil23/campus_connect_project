@@ -258,6 +258,9 @@ async def drive_detail(drive_id: str, user: dict = Depends(active_user)):
         "decide_changes": is_college(user, drive),
     }
     item["role_in_drive"] = "company" if is_company(user, drive) else "college"
+    from .org import contacts_of
+    item["contacts"] = (await contacts_of("college", drive.get("college_id")) if is_company(user, drive)
+                        else await contacts_of("company", drive.get("company_id")))
     item["college"] = (await college_names()).get(drive.get("college_id"))
     return item
 

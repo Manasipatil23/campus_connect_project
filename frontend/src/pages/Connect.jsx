@@ -5,6 +5,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { Reveal, Tilt } from "../components/fx/motion";
 import { ErrorNote, Modal, PageHeader, Spinner, Tabs, ago, useApi } from "../components/ui";
+import { ContactList } from "../components/workflow";
 
 const KIND_LABEL = { info_request: "Asked for more information", date_confirmation: "Date confirmation", document_request: "Document request" };
 
@@ -132,8 +133,11 @@ export default function Connect() {
                   <div className="font-medium">{c.other?.name}</div>
                   <div className="text-sm text-white/60">{isCollege ? `${c.other?.industry} · ${c.other?.hq_city}` : `${c.other?.city} · Tier ${c.other?.tier}`}</div>
                   {c.message && <p className="mt-2 text-sm text-white/80">“{c.message}”</p>}
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <button className="btn flex-1 border border-white/20 text-white hover:bg-white/10" onClick={() => setParams({ thread: c.id })}>Ask for info{c.unread ? ` (${c.unread})` : ""}</button>
+                  {c.contacts?.length > 0 && <div className="mt-3 rounded-xl bg-white/5 p-3"><ContactList contacts={c.contacts} dark /></div>}
+                  <button className="mt-3 text-sm text-brand-200 hover:text-white hover:underline" onClick={() => setParams({ thread: c.id })}>
+                    Ask for more information{c.unread ? ` (${c.unread} new)` : ""}
+                  </button>
+                  <div className="mt-3 flex gap-2">
                     <button className="btn flex-1 border border-white/20 text-white hover:bg-white/10" onClick={() => respond(c, "reject")}>Decline</button>
                     <button className="btn flex-1 bg-white text-ink hover:bg-brand-50" onClick={() => respond(c, "approve")}>Accept</button>
                   </div>
@@ -178,6 +182,9 @@ export default function Connect() {
                       {isCollege ? <span>{o.industry} · {o.drives_posted} drives on Campus Connect</span>
                         : <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{o.students} students on Campus Connect</span>}
                     </div>
+                    {conn?.status === "accepted" && conn.contacts?.length > 0 && (
+                      <div className="mt-4 rounded-xl bg-brand-50/50 p-3"><ContactList contacts={conn.contacts} /></div>
+                    )}
                     <div className="mt-5">
                       <ConnectButton conn={conn} onConnect={() => setAsking(o)} onRespond={(d) => respond(conn, d)}
                         onThread={() => setParams({ thread: conn.id })} onCancel={() => cancel(conn)} />
@@ -191,6 +198,7 @@ export default function Connect() {
       )}
 
       <Modal open={Boolean(thread)} onClose={() => setParams({})} wide title={thread ? `${thread.other?.name} · ${thread.status_label}` : ""}>
+        {thread?.contacts?.length > 0 && <div className="mb-5 rounded-xl bg-brand-50/50 p-4"><ContactList contacts={thread.contacts} /></div>}
         {thread && <Thread conn={thread} onChange={reloadConns} />}
       </Modal>
 
