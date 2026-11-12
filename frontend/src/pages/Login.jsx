@@ -19,7 +19,7 @@ function AuthSwitch({ mode }) {
     <div className="mb-10 grid grid-cols-2 rounded-full border border-black/[.06] bg-white/80 p-1 text-sm shadow-soft">
       {[["signin", "Sign in", "/login"], ["signup", "Create account", "/register"]].map(([k, l, to]) => (
         <Link key={k} to={to} aria-current={mode === k ? "page" : undefined}
-          className={`rounded-full py-2 text-center font-medium transition ${mode === k ? "bg-ink text-white" : "text-ink-muted hover:text-ink"}`}>{l}</Link>
+          className={`rounded-full py-2 text-center font-medium transition ${mode === k ? "bg-brand-800 text-white" : "text-ink-muted hover:text-ink"}`}>{l}</Link>
       ))}
     </div>
   );

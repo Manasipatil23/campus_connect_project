@@ -200,7 +200,7 @@ export function Tabs({ value, onChange, options }) {
     <div className="inline-flex flex-wrap gap-1 rounded-full border border-black/[.06] bg-white/70 p-1">
       {options.map(([k, l]) => (
         <button key={k} onClick={() => onChange(k)}
-          className={`rounded-full px-4 py-1.5 text-sm transition ${value === k ? "bg-ink text-white" : "text-ink-soft hover:text-ink"}`}>{l}</button>
+          className={`rounded-full px-4 py-1.5 text-sm transition ${value === k ? "bg-brand-800 text-white" : "text-ink-soft hover:text-ink"}`}>{l}</button>
       ))}
     </div>
   );
