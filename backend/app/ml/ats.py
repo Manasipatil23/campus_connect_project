@@ -1,10 +1,21 @@
 """ATS-style resume scoring.
 
-Combines four signals into a 0-100 score:
-  * skill coverage   - share of the job's required skills found in the resume
-  * text similarity  - TF-IDF cosine similarity between resume and job description
-  * structure        - presence of the sections recruiters and ATS parsers expect
-  * impact           - quantified achievements (numbers, %, metrics)
+Two modes, because a match score only means something when there's a job to match:
+
+  job match (a drive's JD is given):
+    40% skill coverage  - share of the job's required skills found in the resume
+    30% JD similarity   - TF-IDF cosine similarity between resume and job description
+    20% structure       - presence of the sections recruiters and ATS parsers expect
+    10% impact          - quantified achievements (numbers, %, metrics)
+
+  resume quality (no job selected, e.g. the Resume page):
+    there is no JD, so similarity is not measured at all and its weight is spread
+    over what can be measured:
+    45% skill breadth   - recognised skills, full marks at 8
+    35% structure
+    20% impact
+
+Both subtract 5 points when the resume is under 250 or over 900 words.
 """
 import re
 from typing import Iterable, List, Optional
@@ -101,9 +112,10 @@ def score_resume(
         matched, missing = sorted(found), []
         coverage = min(1.0, len(found) / 8)
 
-    sim = _similarity(resume_text, jd_text) if jd_text else None
+    has_job = bool(jd_text and jd_text.strip())
+    sim = _similarity(resume_text, jd_text) if has_job else None
     # raw TF-IDF cosine between a resume and a JD rarely exceeds ~0.35
-    sim_scaled = min(1.0, sim / 0.35) if sim is not None else coverage
+    sim_scaled = min(1.0, sim / 0.35) if sim is not None else None
 
     sections_found = [name for name, keys in SECTIONS.items() if any(_contains(low, k) for k in keys)]
     structure = len(sections_found) / len(SECTIONS)
@@ -114,11 +126,20 @@ def score_resume(
     words = len(resume_text.split())
     length_penalty = 0.0 if 250 <= words <= 900 else 0.05
 
-    raw = 0.40 * coverage + 0.30 * sim_scaled + 0.20 * structure + 0.10 * impact
+    if has_job:
+        weights = {"skills": 0.40, "similarity": 0.30, "structure": 0.20, "impact": 0.10}
+        raw = 0.40 * coverage + 0.30 * sim_scaled + 0.20 * structure + 0.10 * impact
+    else:
+        # nothing to compare against: don't invent a similarity, re-weight the rest
+        weights = {"skills": 0.45, "similarity": 0.0, "structure": 0.35, "impact": 0.20}
+        raw = 0.45 * coverage + 0.35 * structure + 0.20 * impact
     score = max(0.0, min(100.0, round(100 * (raw - length_penalty), 1)))
 
     return {
         "score": score,
+        "mode": "job" if has_job else "general",
+        "weights": weights,
+        "length_penalty": length_penalty > 0,
         "skill_coverage": round(coverage * 100, 1),
         "similarity": round(sim, 3) if sim is not None else None,
         "structure": round(structure * 100, 1),

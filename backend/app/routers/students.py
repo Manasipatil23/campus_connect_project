@@ -16,7 +16,7 @@ from ..ml.insights import (assessment_insights, headline, reached, resume_insigh
                            rule_suggestions_resume)
 from ..ml.llm import personalised_suggestions, review_resume
 from ..schemas import FUNNEL, ROUND_LABELS, STAGE_LABELS, TERMINAL, OfferResponseIn, ProfileIn, ResumeTextIn
-from ..workflow import ACCEPTING, college_staff, drive_company_staff, drive_label, log_update, notify, now
+from ..workflow import ACCEPTING, STUDENT_VISIBLE, college_staff, drive_company_staff, drive_label, log_update, notify, now
 from .drives import get_drive, oid, screening_view, student_round
 
 router = APIRouter(prefix="/api/students", tags=["students"])
@@ -87,6 +87,52 @@ async def match_drive(drive_id: str, user: dict = Depends(student_only)):
     ats = score_resume(resume["text"], drive["description"], drive.get("required_skills"))
     review = await run_in_threadpool(review_resume, resume["text"], ats, drive["description"])
     return {"ats": ats, "review": review}
+
+
+FIT_THRESHOLD = 60  # % of a drive's required skills your resume shows
+
+
+@router.get("/me/drive-fit")
+async def drive_fit(user: dict = Depends(student_only)):
+    """Every drive that has come to your campus, how well your resume covers its required
+    skills, and whether you applied. A drive "matches your skills" when your resume shows at
+    least 60% of its required skills."""
+    resume = user.get("resume")
+    drives = await db.drives.find({"college_id": user.get("college_id"),
+                                   "status": {"$in": list(STUDENT_VISIBLE)}}).sort("created_at", -1).to_list(None)
+    apps = {a["drive_id"]: a async for a in db.applications.find({"student_id": user["id"]}, {"drive_id": 1, "status": 1})}
+    today = datetime.now(timezone.utc).date().isoformat()
+    rows = []
+    for d in drives:
+        did = str(d["_id"])
+        ats = score_resume(resume["text"], d["description"], d.get("required_skills")) if resume else None
+        open_now = d.get("status") in ACCEPTING and not (d.get("deadline") and d["deadline"] < today)
+        eligible, reasons = check_eligibility(user, d)
+        app = apps.get(did)
+        rows.append({
+            "drive_id": did, "company": d["company"], "role": d["role"], "ctc_lpa": d.get("ctc_lpa"),
+            "deadline": d.get("deadline"), "open": open_now,
+            "skill_fit": ats["skill_coverage"] if ats else None, "match": ats["score"] if ats else None,
+            "matched_skills": ats["matched_skills"] if ats else [], "missing_skills": ats["missing_skills"] if ats else [],
+            "fits": bool(ats and ats["skill_coverage"] >= FIT_THRESHOLD),
+            "eligible": eligible, "ineligible_reasons": reasons,
+            "application": {"id": str(app["_id"]), "status": app["status"]} if app else None,
+        })
+    rows.sort(key=lambda r: (-(r["skill_fit"] or 0), r["company"]))
+    fits = [r for r in rows if r["fits"]]
+    not_applied = [r for r in fits if not r["application"]]
+    return {
+        "has_resume": bool(resume), "threshold": FIT_THRESHOLD,
+        "summary": {
+            "total": len(rows),
+            "fits": len(fits),
+            "applied": sum(1 for r in fits if r["application"]),
+            "not_applied": len(not_applied),
+            "can_still_apply": sum(1 for r in not_applied if r["open"] and r["eligible"]),
+            "missed": sum(1 for r in not_applied if not r["open"] and r["eligible"]),
+        },
+        "drives": rows,
+    }
 
 
 async def student_health(user: dict, apps: Optional[list] = None) -> dict:

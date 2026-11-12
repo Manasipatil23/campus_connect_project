@@ -1,6 +1,7 @@
+import re
 from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 AppStatus = Literal["applied", "shortlisted", "assessment_cleared", "offered", "accepted", "rejected"]
 
@@ -47,6 +48,40 @@ class LoginIn(BaseModel):
     password: str
 
 
+class OtherLink(BaseModel):
+    label: str = Field(min_length=1, max_length=40)
+    url: str = Field(max_length=300)
+
+
+# profile links: a username or a full URL is accepted; stored as a full URL
+LINK_SITES = {
+    "linkedin": ("linkedin.com", "https://www.linkedin.com/in/{}"),
+    "github": ("github.com", "https://github.com/{}"),
+    "leetcode": ("leetcode.com", "https://leetcode.com/u/{}"),
+}
+_URL = re.compile(r"^https?://[\w.-]+\.[a-z]{2,}(/\S*)?$", re.I)
+
+
+def _normalise_url(value: Optional[str], site: Optional[str] = None) -> Optional[str]:
+    v = (value or "").strip()
+    if not v:
+        return None
+    if site:
+        domain, template = LINK_SITES[site]
+        if not v.lower().startswith("http"):
+            if "/" in v or "." in v:
+                v = "https://" + v.lstrip("/")
+            else:
+                return template.format(v.lstrip("@"))
+        if domain not in v.lower():
+            raise ValueError(f"must be a {domain} link or username")
+    elif not v.lower().startswith("http"):
+        v = "https://" + v
+    if not _URL.match(v):
+        raise ValueError("must be a valid link")
+    return v
+
+
 class ProfileIn(BaseModel):
     branch: str
     cgpa: float = Field(ge=0, le=10)
@@ -58,6 +93,25 @@ class ProfileIn(BaseModel):
     skills: List[str] = []
     phone: Optional[str] = None
     linkedin: Optional[str] = None
+    github: Optional[str] = None
+    leetcode: Optional[str] = None
+    portfolio: Optional[str] = None
+    other_links: List[OtherLink] = Field(default=[], max_length=5)
+
+    @field_validator("linkedin", "github", "leetcode")
+    @classmethod
+    def _site_link(cls, v, info):
+        return _normalise_url(v, info.field_name)
+
+    @field_validator("portfolio")
+    @classmethod
+    def _portfolio(cls, v):
+        return _normalise_url(v)
+
+    @field_validator("other_links")
+    @classmethod
+    def _others(cls, links):
+        return [OtherLink(label=l.label.strip(), url=_normalise_url(l.url)) for l in links if l.url.strip()]
 
 
 class Criteria(BaseModel):
