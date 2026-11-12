@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Sparkles, Trash2 } from "lucide-react";
+import { Check, Plus, Sparkles, Trash2 } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { ErrorNote, PageHeader, useApi } from "../components/ui";
@@ -70,13 +70,23 @@ export default function DriveForm() {
     }
   };
 
+  const checklist = [
+    ...(isCollege ? [] : [["College selected", Boolean(f.college_id)]]),
+    ["Role and CTC", Boolean(f.role && f.ctc_lpa)],
+    ["Job description", f.description.length >= 30],
+    ["Required skills", f.skills.trim().length > 0],
+    ...(isCollege ? [] : [["Criteria confirmed", confirmed]]),
+    ["At least one round", rounds.some((r) => r.name.trim())],
+  ];
+
   return (
     <>
       <PageHeader eyebrow={isCollege ? user.college?.name : user.company} title="New placement" accent="drive."
         subtitle={isCollege
           ? "A drive your placement cell runs itself. It's approved on creation; publish it when you're ready."
           : "Save it as a draft or send it to the placement cell. Students only see it after the college reviews and publishes it."} />
-      <form onSubmit={submit(!isCollege)} className="card max-w-3xl space-y-6 p-6 sm:p-8">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <form onSubmit={submit(!isCollege)} className="card space-y-6 p-6 sm:p-8">
         {!isCollege && (
           <div>
             <label className="label">College</label>
@@ -168,6 +178,40 @@ export default function DriveForm() {
           )}
         </div>
       </form>
+
+      <aside className="space-y-4 lg:sticky lg:top-24">
+        <div className="card p-6">
+          <div className="flex items-baseline justify-between">
+            <h2 className="font-medium">Ready to send</h2>
+            <span className="text-sm tabular-nums text-ink-muted">{checklist.filter(([, ok]) => ok).length}/{checklist.length}</span>
+          </div>
+          <div className="mt-3 h-1.5 rounded-full bg-brand-50">
+            <div className="h-1.5 rounded-full bg-gradient-to-r from-brand-400 to-brand-700 transition-all" style={{ width: `${(100 * checklist.filter(([, ok]) => ok).length) / checklist.length}%` }} />
+          </div>
+          <ul className="mt-4 space-y-2.5 text-sm">
+            {checklist.map(([label, ok]) => (
+              <li key={label} className={`flex items-center gap-2 ${ok ? "text-ink" : "text-ink-muted"}`}>
+                {ok ? <Check className="h-4 w-4 text-emerald-600" /> : <span className="h-4 w-4 rounded-full border border-black/15" />}{label}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="card p-6">
+          <h2 className="font-medium">What happens next</h2>
+          <ol className="mt-4 space-y-4 text-sm">
+            {(isCollege
+              ? [["Created", "Approved straight away, since your college runs it"], ["Publish", "Eligible students are notified"], ["Run rounds", "Confirm dates and track applicants"]]
+              : [["Placement cell reviews", "They approve it or ask for changes"], ["Published to students", "Only eligible students see it"], ["You screen applicants", "Resumes are compared with your JD"]]
+            ).map(([t, d], i) => (
+              <li key={t} className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-medium text-brand-700">{i + 1}</span>
+                <div><div className="font-medium">{t}</div><div className="text-xs text-ink-muted">{d}</div></div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </aside>
+      </div>
     </>
   );
 }

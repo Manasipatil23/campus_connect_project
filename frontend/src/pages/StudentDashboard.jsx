@@ -39,7 +39,7 @@ function nextSteps(actions, a, d) {
     const SPECIAL = { "power bi": "Power BI", sql: "SQL", aws: "AWS", dsa: "DSA", etl: "ETL", nlp: "NLP", "html/css": "HTML/CSS", "node.js": "Node.js", "rest api": "REST API" };
     const pretty = (sk) => SPECIAL[sk.toLowerCase()] || sk.charAt(0).toUpperCase() + sk.slice(1);
     const title = focus.title.replace(/(show )(.+)$/i, (_, lead, sk) => lead + pretty(sk));
-    const detail = (focus.impact || focus.area).replace(/^1 open drive\(s\)/, "1 open drive").replace("drive(s)", "drives");
+    const detail = (focus.impact || focus.area).replace(/^1 open drive\(s\) need it/, "1 open drive needs it").replace("drive(s)", "drives");
     steps.push({ title, detail, to: "/insights", cta: "Why" });
   }
   return steps.slice(0, 3);
@@ -88,16 +88,16 @@ export default function StudentDashboard() {
       )}
 
       {/* 2. what to do next */}
-      <section className="rounded-3xl bg-ink p-6 text-white sm:p-7">
+      <section className="rounded-3xl bg-gradient-to-br from-brand-800 to-brand-900 p-6 text-white shadow-[0_24px_50px_-24px_rgba(91,33,182,.6)] sm:p-7">
         <h2 className="text-lg font-medium">Do this next</h2>
-        {steps.length === 0 ? <p className="mt-3 text-sm text-white/60">You're all caught up. We'll tell you when something needs you.</p> : (
-          <ol className="mt-4 grid gap-3 md:grid-cols-3">
+        {steps.length === 0 ? <p className="mt-3 text-sm text-white/70">You're all caught up. We'll tell you when something needs you.</p> : (
+          <ol className={`mt-4 grid gap-3 ${steps.length === 1 ? "" : steps.length === 2 ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
             {steps.map((x, i) => (
               <li key={i}>
-                <Link to={x.to} className="group flex h-full flex-col rounded-2xl bg-white/[.06] p-4 transition hover:bg-white/[.1]">
-                  <span className="text-xs text-brand-300">{i + 1}</span>
+                <Link to={x.to} className="group flex h-full flex-col rounded-2xl bg-white/[.08] p-4 transition hover:bg-white/[.14]">
+                  <span className="text-xs text-brand-200">{i + 1}</span>
                   <span className="mt-1 font-medium leading-snug">{x.title}</span>
-                  <span className="mt-1 line-clamp-2 text-sm text-white/60">{x.detail}</span>
+                  <span className="mt-1 line-clamp-2 text-sm text-white/70">{x.detail}</span>
                   <span className="mt-auto inline-flex items-center gap-1 pt-3 text-sm text-white">{x.cta} <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" /></span>
                 </Link>
               </li>
