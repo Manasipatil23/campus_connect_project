@@ -1,0 +1,173 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Plus, Sparkles, Trash2 } from "lucide-react";
+import { api } from "../api";
+import { useAuth } from "../auth";
+import { ErrorNote, PageHeader, useApi } from "../components/ui";
+
+const BRANCHES = ["Computer", "IT", "EXTC", "Electronics", "Mechanical", "AI & DS", "Civil", "Chemical"];
+const ROUND_KINDS = ["Online assessment", "Group discussion", "Technical interview", "HR interview", "Other"];
+
+export default function DriveForm() {
+  const { user } = useAuth();
+  const isCollege = user.role === "coordinator";
+  const navigate = useNavigate();
+  const { data: directory } = useApi(isCollege ? "/colleges" : "/directory/colleges");
+  const colleges = (directory || []).filter((c) => c.connection?.status === "accepted");
+  const [f, setF] = useState({
+    college_id: "", sections: "Aptitude, Coding, Technical MCQ",
+    company: user.company || "", role: "", description: "", ctc_lpa: "", location: "", tier: "regular",
+    skills: "", preferred: "", min_cgpa: "6.5", max_backlogs: "0", branches: [], grad_year: String(new Date().getFullYear()), deadline: "",
+  });
+  const [rounds, setRounds] = useState([{ name: "Online assessment", kind: "Online assessment", date: "", time: "" }]);
+  const [confirmed, setConfirmed] = useState(false);
+  const [suggested, setSuggested] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const set = (k) => (e) => { setF({ ...f, [k]: e.target.value }); if (k === "skills" || k === "preferred") setConfirmed(false); };
+  const toggleBranch = (b) => setF({ ...f, branches: f.branches.includes(b) ? f.branches.filter((x) => x !== b) : [...f.branches, b] });
+  const setRound = (i, k, v) => setRounds(rounds.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+
+  const extract = async () => {
+    setError(null);
+    try {
+      const { skills } = await api("/drives/extract-skills", { method: "POST", body: { description: f.description } });
+      setSuggested(skills);
+      const have = new Set(f.skills.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
+      setF({ ...f, skills: [...have, ...skills.filter((s) => !have.has(s))].join(", ") });
+      setConfirmed(false);
+    } catch (e) { setError(e.message); }
+  };
+
+  const submit = (send) => async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const d = await api("/drives", {
+        method: "POST",
+        body: {
+          company: f.company, role: f.role, description: f.description, ctc_lpa: Number(f.ctc_lpa),
+          location: f.location, tier: f.tier, deadline: f.deadline || null,
+          college_id: isCollege ? null : f.college_id,
+          assessment_sections: f.sections.split(",").map((s) => s.trim()).filter(Boolean),
+          required_skills: f.skills.split(",").map((s) => s.trim()).filter(Boolean),
+          preferred_skills: f.preferred.split(",").map((s) => s.trim()).filter(Boolean),
+          criteria_confirmed: confirmed, submit: send,
+          rounds: rounds.filter((r) => r.name.trim()).map((r) => ({ ...r, date: r.date || null, time: r.time || null })),
+          criteria: {
+            min_cgpa: f.min_cgpa === "" ? null : Number(f.min_cgpa),
+            max_backlogs: f.max_backlogs === "" ? null : Number(f.max_backlogs),
+            branches: f.branches,
+            grad_years: f.grad_year ? [Number(f.grad_year)] : [],
+          },
+        },
+      });
+      navigate(`/drives/${d.id}`);
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <PageHeader eyebrow={isCollege ? user.college?.name : user.company} title="New placement" accent="drive."
+        subtitle={isCollege
+          ? "A drive your placement cell runs itself. It's approved on creation; publish it when you're ready."
+          : "Save it as a draft or send it to the placement cell. Students only see it after the college reviews and publishes it."} />
+      <form onSubmit={submit(!isCollege)} className="card max-w-3xl space-y-6 p-6 sm:p-8">
+        {!isCollege && (
+          <div>
+            <label className="label">College</label>
+            <select className="input" value={f.college_id} onChange={set("college_id")} required>
+              <option value="" disabled>{colleges.length ? "Which college is this drive for?" : "Connect with a college first"}</option>
+              {colleges.map((c) => <option key={c.id} value={c.id}>{c.name}, {c.city} · Tier {c.tier}</option>)}
+            </select>
+          </div>
+        )}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div><label className="label">Company</label><input className="input" value={f.company} onChange={set("company")} required disabled={!isCollege} /></div>
+          <div><label className="label">Role / department</label><input className="input" value={f.role} onChange={set("role")} required /></div>
+          <div><label className="label">CTC (LPA, if shareable)</label><input type="number" step="0.1" min="0.1" className="input" value={f.ctc_lpa} onChange={set("ctc_lpa")} required /></div>
+          <div><label className="label">Location</label><input className="input" value={f.location} onChange={set("location")} /></div>
+          <div>
+            <label className="label">Tier</label>
+            <select className="input" value={f.tier} onChange={set("tier")}>
+              <option value="regular">Regular</option><option value="dream">Dream (open to placed students)</option>
+            </select>
+          </div>
+          <div><label className="label">Application deadline</label><input type="date" className="input" value={f.deadline} onChange={set("deadline")} /></div>
+        </div>
+
+        <div>
+          <label className="label">Job description</label>
+          <textarea className="input h-36" value={f.description} onChange={set("description")} required minLength={30} />
+        </div>
+
+        <fieldset className="rounded-2xl border border-brand-100 bg-brand-50/30 p-5">
+          <legend className="px-1 text-sm font-medium">Screening criteria</legend>
+          <p className="mb-4 text-xs text-ink-muted">Resumes are compared against exactly these skills. The system suggests them from the JD; you edit and confirm. Nobody is rejected automatically.</p>
+          <button type="button" className="btn-soft mb-4" onClick={extract} disabled={f.description.length < 20}><Sparkles className="h-4 w-4" /> Suggest skills from the JD</button>
+          {suggested && <p className="mb-3 text-xs text-ink-muted">Found {suggested.length ? suggested.join(", ") : "no known skills"} in the JD.</p>}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div><label className="label">Required (must show)</label><input className="input" value={f.skills} onChange={set("skills")} placeholder="python, sql, docker" /></div>
+            <div><label className="label">Preferred (nice to have)</label><input className="input" value={f.preferred} onChange={set("preferred")} placeholder="aws, power bi" /></div>
+          </div>
+          {!isCollege && (
+            <label className="mt-4 flex items-start gap-2 text-sm">
+              <input type="checkbox" className="mt-0.5 accent-brand-600" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
+              I've reviewed these criteria and they reflect what we'll screen for.
+            </label>
+          )}
+        </fieldset>
+
+        <fieldset className="rounded-2xl border border-black/[.06] p-5">
+          <legend className="px-1 text-sm font-medium">Eligibility</legend>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div><label className="label">Min CGPA</label><input type="number" step="0.1" className="input" value={f.min_cgpa} onChange={set("min_cgpa")} /></div>
+            <div><label className="label">Max backlogs</label><input type="number" min="0" className="input" value={f.max_backlogs} onChange={set("max_backlogs")} /></div>
+            <div><label className="label">Graduation year</label><input type="number" className="input" value={f.grad_year} onChange={set("grad_year")} /></div>
+          </div>
+          <div className="mt-4">
+            <div className="label">Branches (none selected = all)</div>
+            <div className="flex flex-wrap gap-2">
+              {BRANCHES.map((b) => (
+                <button type="button" key={b} onClick={() => toggleBranch(b)}
+                  className={`chip px-3 py-1 text-sm ${f.branches.includes(b) ? "bg-brand-600 text-white" : "border border-black/10 bg-white text-ink-muted"}`}>{b}</button>
+              ))}
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset className="rounded-2xl border border-black/[.06] p-5">
+          <legend className="px-1 text-sm font-medium">Selection rounds</legend>
+          <p className="mb-4 text-xs text-ink-muted">Only include the rounds this drive uses. Dates are tentative until the placement cell confirms them.</p>
+          <div className="space-y-3">
+            {rounds.map((r, i) => (
+              <div key={i} className="grid gap-2 sm:grid-cols-[1.4fr_1.2fr_1fr_.8fr_auto]">
+                <input className="input" placeholder="Round name" value={r.name} onChange={(e) => setRound(i, "name", e.target.value)} />
+                <select className="input" value={r.kind} onChange={(e) => setRound(i, "kind", e.target.value)}>{ROUND_KINDS.map((k) => <option key={k}>{k}</option>)}</select>
+                <input type="date" className="input" value={r.date} onChange={(e) => setRound(i, "date", e.target.value)} />
+                <input type="time" className="input" value={r.time} onChange={(e) => setRound(i, "time", e.target.value)} />
+                <button type="button" className="rounded-full p-2 text-ink-muted hover:bg-rose-50 hover:text-rose-600" onClick={() => setRounds(rounds.filter((_, j) => j !== i))} aria-label="Remove round"><Trash2 className="h-4 w-4" /></button>
+              </div>
+            ))}
+          </div>
+          <button type="button" className="btn-ghost mt-3 px-3 py-1.5" onClick={() => setRounds([...rounds, { name: "", kind: "Technical interview", date: "", time: "" }])}><Plus className="h-4 w-4" /> Add round</button>
+          <div className="mt-4"><label className="label">Assessment sections (scored per candidate)</label><input className="input" value={f.sections} onChange={set("sections")} /></div>
+        </fieldset>
+
+        <ErrorNote>{error}</ErrorNote>
+        <div className="flex flex-wrap gap-2">
+          {isCollege ? <button className="btn-primary" disabled={busy}>{busy ? "Saving…" : "Create drive"}</button> : (
+            <>
+              <button className="btn-primary" disabled={busy || !confirmed}>{busy ? "Sending…" : "Send to placement cell"}</button>
+              <button type="button" className="btn-ghost" disabled={busy} onClick={submit(false)}>Save draft</button>
+            </>
+          )}
+        </div>
+      </form>
+    </>
+  );
+}

@@ -1,0 +1,77 @@
+"""End-to-end onboarding: college signup -> admin approval -> student signup -> TPO approval
+-> company connects -> drive -> shared experience. Run: CHECK_EMAIL_DELIVERABILITY=false python -m tests.test_onboarding
+(uses the local database and removes what it creates)."""
+from bson import ObjectId
+from fastapi.testclient import TestClient
+from pymongo import MongoClient
+
+from app.main import app
+
+
+def run():
+    db = MongoClient()["campus_connect"]
+    col_id = None
+    H = lambda t: {"Authorization": f"Bearer {t}"}
+
+    def check(r, expect, label):
+        assert r.status_code == expect, f"{label}: expected {expect}, got {r.status_code} {r.text}"
+        print(f"  ok  {label} ({r.status_code})")
+        return r.json()
+
+    try:
+        with TestClient(app) as c:
+            code = c.post("/api/auth/send-code", json={"email": "tpo@testinst.edu.in", "kind": "college", "domain": "testinst.edu.in"}).json()["dev_code"]
+            body = dict(name="Test Institute of Engineering", aishe_code="C-99881", institution_type="Private",
+                        affiliated_university="University of Testing", established_year=1999, naac_grade="A",
+                        website="https://www.testinst.edu.in", address="12, Long Test Road, Nashik", city="Nashik",
+                        state="Maharashtra", pincode="422001", phone="02532345678", email_domain="testinst.edu.in",
+                        student_email_domain="student.testinst.edu.in", tpo_name="Test Officer", tpo_designation="TPO",
+                        tpo_email="tpo@testinst.edu.in", tpo_phone="9820011111", code="000000", password="password123")
+            check(c.post("/api/auth/register/college", json=body), 400, "college: wrong code rejected")
+            r = check(c.post("/api/auth/register/college", json={**body, "code": code}), 200, "college: registered")
+            tpo, col_id = r["token"], r["user"]["college_id"]
+            assert r["user"]["status"] == "pending" and r["user"]["college"]["status"] == "pending"
+            check(c.get("/api/college/students", headers=H(tpo)), 403, "college: pending TPO locked out")
+            check(c.get("/api/colleges").__class__ and c.post("/api/auth/send-code", json={"email": "x@student.testinst.edu.in", "kind": "student", "college_id": col_id}), 400, "student: can't join unapproved college")
+
+            adm = c.post("/api/auth/login", json={"email": "admin@campusconnect.dev", "password": "admin123"}).json()["token"]
+            check(c.post(f"/api/admin/colleges/{col_id}/decision", json={"decision": "approve"}, headers=H(adm)), 400, "admin: tier required")
+            check(c.post(f"/api/admin/colleges/{col_id}/decision", json={"decision": "approve", "tier": 2}, headers=H(adm)), 200, "admin: college approved")
+            check(c.get("/api/college/students", headers=H(tpo)), 200, "college: TPO active after approval")
+
+            check(c.post("/api/auth/send-code", json={"email": "stu@gmail.com", "kind": "student", "college_id": col_id}), 400, "student: must use college domain")
+            sc = c.post("/api/auth/send-code", json={"email": "riya@student.testinst.edu.in", "kind": "student", "college_id": col_id}).json()["dev_code"]
+            r = check(c.post("/api/auth/register/student", json=dict(first_name="Riya", last_name="Test", email="riya@student.testinst.edu.in",
+                        code=sc, password="password123", college_id=col_id, roll_number="22ce001", branch="Computer",
+                        grad_year=2026, phone="9820022222")), 200, "student: registered")
+            st = r["token"]
+            check(c.get("/api/drives", headers=H(st)), 403, "student: pending locked out")
+            sid = c.get("/api/college/students", headers=H(tpo)).json()[0]["id"]
+            check(c.post(f"/api/college/students/{sid}/decision", json={"decision": "approve"}, headers=H(tpo)), 200, "college: approves student")
+            check(c.get("/api/drives", headers=H(st)), 200, "student: active")
+
+            rec = c.post("/api/auth/login", json={"email": "recruiter@campusconnect.dev", "password": "recruiter123"}).json()["token"]
+            drive = dict(company="x", role="Analyst", description="SQL and Python analytics role for graduates.", ctc_lpa=6, college_id=col_id)
+            check(c.post("/api/drives", json=drive, headers=H(rec)), 403, "company: can't post before connecting")
+            cn = check(c.post("/api/connections", json={"college_id": col_id, "message": "hi"}, headers=H(rec)), 200, "company: requests connection")
+            check(c.post(f"/api/connections/{cn['id']}/decision", json={"decision": "approve"}, headers=H(rec)), 400, "company: can't accept own request")
+            check(c.post(f"/api/connections/{cn['id']}/decision", json={"decision": "approve"}, headers=H(tpo)), 200, "college: accepts connection")
+            d = check(c.post("/api/drives", json=drive, headers=H(rec)), 200, "company: posts drive after connecting")
+
+            check(c.post("/api/experiences", json=dict(drive_id=d["id"], round_type="HR interview", difficulty=3, outcome="cleared", questions=["Why us"]), headers=H(st)), 400, "experience: can't verify a drive you didn't apply to")
+            e = check(c.post("/api/experiences", json=dict(company="Some Co", role="SDE", round_type="Technical interview", difficulty=3, outcome="cleared", questions=["Explain closures"]), headers=H(st)), 200, "experience: shared")
+            assert e["author"] is None and e["verified"] is False and e["college"]
+            check(c.post(f"/api/experiences/{e['id']}/helpful", headers=H(st)), 200, "experience: marked helpful")
+    finally:
+        if col_id:
+            db.colleges.delete_one({"_id": ObjectId(col_id)})
+            db.users.delete_many({"college_id": col_id})
+            db.connections.delete_many({"college_id": col_id})
+            db.drives.delete_many({"college_id": col_id})
+        db.experiences.delete_many({"company": "Some Co"})
+        db.email_codes.delete_many({})
+    print("all onboarding checks passed")
+
+
+if __name__ == "__main__":
+    run()
