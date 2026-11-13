@@ -6,6 +6,7 @@ import {
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { ErrorNote, PageHeader } from "../components/ui";
+import { openBatches } from "../components/forms";
 
 const BRANCHES = ["Computer", "IT", "EXTC", "Electronics", "Mechanical", "AI & DS", "Civil", "Chemical"];
 const LINKS = [
@@ -115,7 +116,7 @@ export default function Profile() {
   const navigate = useNavigate();
   const p = user.profile || {};
   const [f, setF] = useState({
-    branch: p.branch || "", cgpa: p.cgpa ?? "", backlogs: p.backlogs ?? 0, grad_year: p.grad_year || new Date().getFullYear(),
+    branch: p.branch || "", cgpa: p.cgpa ?? "", backlogs: p.backlogs ?? 0, grad_year: p.grad_year || openBatches()[0],
     internships: p.internships ?? 0, projects: p.projects ?? 0, certifications: p.certifications ?? 0,
     skills: p.skills || [], phone: p.phone || user.phone || "",
     linkedin: p.linkedin || "", github: p.github || "", leetcode: p.leetcode || "", portfolio: p.portfolio || "",
@@ -221,7 +222,10 @@ export default function Profile() {
               </select>
             </div>
             <div><label className="label">CGPA (out of 10)</label><input type="number" step="0.01" min="0" max="10" className="input" value={f.cgpa} onChange={set("cgpa")} required /></div>
-            <div><label className="label">Graduation year</label><input type="number" min="2020" max="2035" className="input" value={f.grad_year} onChange={set("grad_year")} required /></div>
+            <div><label className="label">Graduation year</label>
+              <select className="input" value={f.grad_year} onChange={set("grad_year")} required>
+                {[...new Set([...openBatches(), Number(user.profile?.grad_year)].filter(Boolean))].sort().map((y) => <option key={y} value={y}>{y}</option>)}
+              </select></div>
             <div><label className="label">Active backlogs</label><input type="number" min="0" className="input" value={f.backlogs} onChange={set("backlogs")} required /></div>
           </div>
         </Section>

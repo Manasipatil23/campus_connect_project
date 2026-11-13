@@ -209,6 +209,13 @@ async def upload_jd(file: UploadFile = File(...), user: dict = Depends(managers)
             "skills": extract_skills(text)}
 
 
+@router.delete("/drives/jd-file/{file_id}")
+async def discard_jd(file_id: str, user: dict = Depends(managers)):
+    """Remove an uploaded JD that was never attached to a drive (the person removed it from the form)."""
+    await db.jd_files.delete_one({"_id": oid(file_id), "uploaded_by": user["id"], "drive_id": None})
+    return {"ok": True}
+
+
 @router.get("/drives/{drive_id}/jd-file")
 async def download_jd(drive_id: str, user: dict = Depends(active_user)):
     drive = await get_drive(drive_id)
@@ -530,10 +537,11 @@ async def review_drive(drive_id: str, body: DriveReviewIn, user: dict = Depends(
                 r.update(status="confirmed", confirmed=True, updated_at=now())
         update["rounds"] = rounds
     await db.drives.update_one({"_id": drive["_id"]}, {"$set": update})
-    label = {"approved": "Drive approved", "changes_requested": "Changes requested", "cancelled": "Drive declined"}[new]
-    default = {"approved": "Next, the placement cell publishes it to eligible students.",
+    label = {"approved": "Drive confirmed", "changes_requested": "Changes requested", "cancelled": "Drive declined"}[new]
+    default = {"approved": "The placement cell confirmed this drive. Next, they publish it to eligible students.",
                "changes_requested": "Open the drive to see what to change.", "cancelled": "The placement cell declined this drive."}[new]
-    n = await notify(await drive_company_staff(drive), f"{label} · {drive_label(drive)}", body.note or default, f"/drives/{drive_id}", "drive")
+    n = await notify(await drive_company_staff(drive), f"{label} · {drive_label(drive)}", body.note or default, f"/drives/{drive_id}", "drive",
+                     email_from=user, email_body=default + (f"\n\nTheir note:\n“{body.note}”" if body.note else ""))
     await log_update(entity="drive", entity_id=drive_id, drive_id=drive_id, college_id=drive["college_id"],
                      company_id=drive.get("company_id"), action="status", field="status", old="review", new=new,
                      summary=label + (f": {body.note}" if body.note else ""), by=user,

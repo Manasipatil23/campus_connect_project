@@ -22,7 +22,7 @@ DRIVE_STATUS = {
     "draft": "Draft",
     "review": "Sent for review",
     "changes_requested": "Needs changes",
-    "approved": "Approved",
+    "approved": "Confirmed",
     "published": "Published",
     "in_progress": "In progress",
     "completed": "Completed",

@@ -171,7 +171,7 @@ export default function OrgProfile() {
             <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
               {data.verified_fields.filter((k) => o[k] != null && o[k] !== "").map((k) => (
                 <div key={k} className="flex items-center justify-between gap-3 border-b border-black/[.05] pb-2">
-                  <dt className="text-ink-muted">{VERIFIED_LABEL[k] || k}</dt><dd className="font-medium">{String(o[k])}</dd>
+                  <dt className="text-ink-muted">{VERIFIED_LABEL[k] || k}</dt><dd className="font-medium [overflow-wrap:anywhere]">{String(o[k])}</dd>
                 </div>
               ))}
             </dl>

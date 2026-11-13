@@ -9,6 +9,7 @@ import os
 
 os.environ["SMTP_HOST"] = ""  # tests never send real email (dev mode)
 os.environ["CHECK_EMAIL_DELIVERABILITY"] = "false"  # test addresses use made-up domains
+os.environ["ALLOW_PERSONAL_EMAIL"] = "false"  # tests check the strict email rules
 
 import json
 
@@ -84,6 +85,21 @@ def run():
             check(r.status_code == 200 and r.json()["person"]["phone"] == "9820099999", "company updates its contact")
             tc = next(x for x in c.get("/api/connections", headers=H(tpo)).json() if x["company_id"] == company_id)
             check(any(p["phone"] == "9820099999" for p in tc["contacts"]), "connected college sees the updated phone")
+
+            # the college declines the second company's request with a note saying why
+            req = next(x for x in c.get("/api/connections", headers=H(tpo)).json() if x["company_id"] == temp_company)
+            r = c.post(f"/api/connections/{req['id']}/decision", headers=H(tpo),
+                       json={"decision": "reject", "note": "  We only run product-company drives this season.  "})
+            check(r.status_code == 200 and r.json()["status"] == "declined", "college declines with a note")
+            seen = next(x for x in c.get("/api/connections", headers=H(other)).json() if x["college_id"] == college_id)
+            check(seen["response_note"] == "We only run product-company drives this season.", "company sees why it was declined")
+            hr_id = str(db.users.find_one({"email": "hr@contacts-test.dev"})["_id"])
+            n = db.notifications.find_one({"user_id": hr_id, "title": "Connection declined"})
+            check(n and "product-company drives" in n["body"], "the note is in the company's notification")
+            c.post("/api/connections", json={"college_id": college_id, "message": "Trying again"}, headers=H(other))
+            again = next(x for x in c.get("/api/connections", headers=H(tpo)).json() if x["company_id"] == temp_company and x["status"] == "pending")
+            c.post(f"/api/connections/{again['id']}/decision", headers=H(tpo), json={"decision": "approve", "note": "   "})
+            check(db.connections.find_one({"_id": ObjectId(again["id"])})["response_note"] is None, "a blank note is stored as no note")
     finally:
         db.users.update_one({"email": "recruiter@campusconnect.dev"}, {"$set": {"phone": "9820030000"}})
         if drive_id:

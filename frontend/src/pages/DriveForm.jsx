@@ -44,11 +44,25 @@ export default function DriveForm() {
         skills: [...have, ...r.skills.filter((s) => !have.has(s))].join(", ") }));
       setSuggested(r.skills);
       setConfirmed(false);
-      setJd({ file_id: r.file_id, name: r.name, size: r.size });
+      // remember what the file filled in, so removing the file can take it back out
+      setJd({ file_id: r.file_id, name: r.name, size: r.size, filledText: replace, addedSkills: r.skills.filter((x) => !have.has(x)) });
     } catch (e) { setError(e.message); } finally {
       setJdBusy(false);
       if (jdInput.current) jdInput.current.value = "";
     }
+  };
+
+  const removeJd = () => {
+    const added = new Set(jd?.addedSkills || []);
+    setF((cur) => ({
+      ...cur,
+      description: jd?.filledText ? "" : cur.description,
+      skills: cur.skills.split(",").map((x) => x.trim()).filter((x) => x && !added.has(x.toLowerCase())).join(", "),
+    }));
+    if (jd?.filledText) setSuggested(null);
+    setConfirmed(false);
+    if (jd?.file_id) api(`/drives/jd-file/${jd.file_id}`, { method: "DELETE" }).catch(() => {});  // tidy up the unused upload
+    setJd(null);
   };
 
   const extract = async () => {
@@ -152,7 +166,7 @@ export default function DriveForm() {
                 <div className="truncate font-medium">{jd.name}</div>
                 <div className="text-xs text-ink-muted">{Math.max(1, Math.round(jd.size / 1024))} KB · attached for students to download · text copied below</div>
               </div>
-              <button type="button" className="rounded-full p-1 text-ink-muted hover:bg-white hover:text-ink" title="Remove file" onClick={() => setJd(null)}><X className="h-4 w-4" /></button>
+              <button type="button" className="rounded-full p-1 text-ink-muted hover:bg-white hover:text-ink" title="Remove file and the text it filled in" onClick={removeJd}><X className="h-4 w-4" /></button>
             </div>
           )}
           <textarea id="jd-text" className="input h-36" value={f.description} onChange={set("description")} required minLength={30}

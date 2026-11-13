@@ -5,12 +5,14 @@ import { api } from "../api";
 import { Reveal } from "../components/fx/motion";
 import { Empty, ErrorNote, Modal, PageHeader, Spinner, Stat, Tabs, ago, useApi } from "../components/ui";
 
-function Detail({ label, value, href }) {
+function Detail({ label, value, href, code }) {
   if (!value) return null;
+  // min-w-0 + wrapping keep long values (CIN, GSTIN, long URLs) inside their own column
   return (
-    <div><div className="text-xs text-ink-muted">{label}</div>
-      {href ? <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-brand-700 hover:underline">{value}<ExternalLink className="h-3 w-3" /></a>
-        : <div className="text-sm">{value}</div>}</div>
+    <div className="min-w-0"><div className="text-xs text-ink-muted">{label}</div>
+      {href ? <a href={href} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-start gap-1 text-sm text-brand-700 hover:underline">
+          <span className="[overflow-wrap:anywhere]">{value}</span><ExternalLink className="mt-1 h-3 w-3 shrink-0" /></a>
+        : <div className={`[overflow-wrap:anywhere] ${code ? "font-mono text-[13px] tracking-tight" : "text-sm"}`}>{value}</div>}</div>
   );
 }
 
@@ -25,9 +27,9 @@ function OrgCard({ org, kind, status, onDecide }) {
         </div>
         {status !== "pending" && <span className={`chip ${status === "approved" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-600"}`}>{status}{org.tier ? ` · Tier ${org.tier}` : ""}</span>}
       </div>
-      <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3">
+      <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
         {kind === "college" ? <>
-          <Detail label="AISHE code" value={org.aishe_code} />
+          <Detail code label="AISHE code" value={org.aishe_code} />
           <Detail label="Type" value={org.institution_type} />
           <Detail label="NAAC" value={org.naac_grade} />
           <Detail label="Established" value={org.established_year} />
@@ -37,8 +39,8 @@ function OrgCard({ org, kind, status, onDecide }) {
           <Detail label="Domain" value={org.email_domain} />
           <Detail label="PIN code" value={org.pincode} />
         </> : <>
-          <Detail label="CIN" value={org.cin} />
-          <Detail label="GSTIN" value={org.gstin} />
+          <Detail code label="CIN" value={org.cin} />
+          <Detail code label="GSTIN" value={org.gstin} />
           <Detail label="Size" value={org.size} />
           <Detail label="Website" value={org.website?.replace(/^https?:\/\//, "")} href={org.website} />
           <Detail label="Domain" value={org.email_domain} />

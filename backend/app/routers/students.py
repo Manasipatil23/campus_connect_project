@@ -14,7 +14,7 @@ from ..ml.insights import (assessment_insights, headline, reached, resume_insigh
                            rule_suggestions_resume)
 from ..ml.llm import personalised_suggestions, review_resume
 from ..documents import extract_text
-from ..schemas import FUNNEL, ROUND_LABELS, STAGE_LABELS, TERMINAL, NameIn, OfferResponseIn, ProfileIn, ResumeTextIn
+from ..schemas import batch_error, FUNNEL, ROUND_LABELS, STAGE_LABELS, TERMINAL, NameIn, OfferResponseIn, ProfileIn, ResumeTextIn
 from ..workflow import ACCEPTING, STUDENT_VISIBLE, college_staff, drive_company_staff, drive_label, log_update, notify, now
 from .drives import get_drive, oid, screening_view, student_round
 
@@ -43,6 +43,9 @@ async def _save_resume(user: dict, text: str, filename: str) -> dict:
 
 @router.put("/me/profile")
 async def update_profile(body: ProfileIn, user: dict = Depends(student_only)):
+    # keeping the batch they signed up with is fine; changing it must stay within the open batches
+    if body.grad_year != (user.get("profile") or {}).get("grad_year") and batch_error(body.grad_year):
+        raise HTTPException(400, batch_error(body.grad_year))
     profile = body.model_dump()
     profile["skills"] = sorted({normalize_skill(s) for s in profile["skills"] if s.strip()})
     await db.users.update_one({"_id": ObjectId(user["id"])}, {"$set": {"profile": profile}})

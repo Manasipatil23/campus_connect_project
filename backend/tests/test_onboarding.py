@@ -5,7 +5,10 @@ import os
 
 os.environ["SMTP_HOST"] = ""  # tests never send real email (dev mode)
 os.environ["CHECK_EMAIL_DELIVERABILITY"] = "false"  # test addresses use made-up domains
+os.environ["ALLOW_PERSONAL_EMAIL"] = "false"  # tests check the strict email rules
 os.environ["ADMIN_EMAILS"] = "test.admin@campusconnect.dev"  # only this address may be admin during the test
+
+from datetime import date
 
 from bson import ObjectId
 from fastapi.testclient import TestClient
@@ -70,9 +73,14 @@ def run():
 
             check(c.post("/api/auth/send-code", json={"email": "stu@gmail.com", "kind": "student", "college_id": col_id}), 400, "student: must use college domain")
             sc = c.post("/api/auth/send-code", json={"email": "riya@student.testinst.edu.in", "kind": "student", "college_id": col_id}).json()["dev_code"]
-            r = check(c.post("/api/auth/register/student", json=dict(first_name="Riya", last_name="Test", email="riya@student.testinst.edu.in",
-                        code=sc, password="password123", college_id=col_id, roll_number="22ce001", branch="Computer",
-                        grad_year=2026, phone="9820022222")), 200, "student: registered")
+            student = dict(first_name="Riya", last_name="Test", email="riya@student.testinst.edu.in", code=sc, password="password123",
+                           college_id=col_id, roll_number="22ce001", branch="Computer", phone="9820022222")
+            this_year = date.today().year
+            check(c.get("/api/grad-years"), 200, "batches open today")
+            assert c.get("/api/grad-years").json()["years"] == [this_year + 1, this_year + 2]
+            check(c.post("/api/auth/register/student", json={**student, "grad_year": this_year}), 400, "student: this year's graduates can't sign up")
+            check(c.post("/api/auth/register/student", json={**student, "grad_year": this_year + 3}), 400, "student: batches too far ahead can't sign up")
+            r = check(c.post("/api/auth/register/student", json={**student, "grad_year": this_year + 2}), 200, "student: junior batch registered")
             st = r["token"]
             check(c.get("/api/drives", headers=H(st)), 403, "student: pending locked out")
             sid = c.get("/api/college/students", headers=H(tpo)).json()[0]["id"]
@@ -107,7 +115,8 @@ def run():
             db.drives.delete_many({"college_id": col_id})
         db.users.delete_many({"email": {"$in": ["rogue.admin@campusconnect.dev", "test.admin@campusconnect.dev"]}})
         db.experiences.delete_many({"company": "Some Co"})
-        db.email_codes.delete_many({})
+        # only this test's codes: real people may be part-way through signing up
+        db.email_codes.delete_many({"email": {"$in": ["tpo@testinst.edu.in", "riya@student.testinst.edu.in", "test.admin@campusconnect.dev"]}})
         fixtures.reset(db, since)
     print("all onboarding checks passed")
 

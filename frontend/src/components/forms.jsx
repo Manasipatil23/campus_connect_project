@@ -162,6 +162,14 @@ export function EmailVerify({ email, setEmail, code, setCode, payload, hint, lab
           <div className="mb-3 flex items-center gap-2 text-sm"><MailCheck className="h-4 w-4 text-brand-600" /> Enter the 6-digit code sent to <b className="font-medium">{state.normalized}</b></div>
           <OtpInput value={code} onChange={(v) => { setFromEmail(false); setCode(v); }} />
           {fromEmail && <p className="mt-3 text-xs font-medium text-emerald-700">✓ Code filled in from your email. Continue to the next step.</p>}
+          {!fromEmail && !state.dev && (
+            <p className="mt-3 text-xs text-ink-muted">
+              Didn't get it within a minute? Check your Spam folder (and Promotions, if you use Gmail). College email systems sometimes hold new senders for a while.{" "}
+              {cool > 0 ? `You can resend in ${cool}s.` : (
+                <button type="button" onClick={send} disabled={state.sending} className="font-medium text-brand-700 hover:underline">{state.sending ? "Sending…" : "Send a new code"}</button>
+              )}
+            </p>
+          )}
           {state.dev && (
             <p className="mt-3 text-xs text-ink-muted">Dev mode (no email server configured): your code is <b className="font-mono text-ink">{state.dev}</b></p>
           )}
@@ -181,27 +189,42 @@ function strength(pw) {
   return Math.min(4, s);
 }
 
-export function PasswordFields({ pw, setPw, confirm, setConfirm }) {
+/** A password box with its own show/hide eye. */
+function SecretInput({ value, onChange, label, id, ...rest }) {
   const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <input id={id} type={show ? "text" : "password"} className="input pr-11" value={value} onChange={onChange} autoComplete="new-password" aria-label={label} {...rest} />
+      <button type="button" onClick={() => setShow(!show)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-ink-muted hover:text-ink"
+        aria-label={`${show ? "Hide" : "Show"} ${label.toLowerCase()}`} title={show ? "Hide" : "Show"}>
+        {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
+    </div>
+  );
+}
+
+export function PasswordFields({ pw, setPw, confirm, setConfirm }) {
   const s = strength(pw);
   const labels = ["Too weak", "Weak", "Okay", "Good", "Strong"];
   return (
     <div className="space-y-4">
       <Field label="Password" error={pw && pw.length < 8 ? "At least 8 characters" : null}>
-        <div className="relative">
-          <input type={show ? "text" : "password"} className="input pr-10" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" />
-          <button type="button" onClick={() => setShow(!show)} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted" aria-label={show ? "Hide password" : "Show password"}>
-            {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </button>
-        </div>
+        <SecretInput value={pw} onChange={(e) => setPw(e.target.value)} label="Password" />
         <div className="mt-2 flex items-center gap-2">
           <div className="flex flex-1 gap-1">{[0, 1, 2, 3].map((i) => <span key={i} className={`h-1 flex-1 rounded-full ${i < s ? (s < 2 ? "bg-rose-400" : s < 3 ? "bg-amber-400" : "bg-emerald-500") : "bg-black/[.07]"}`} />)}</div>
           <span className="w-16 text-right text-xs text-ink-muted">{pw ? labels[s] : ""}</span>
         </div>
       </Field>
       <Field label="Confirm password" error={confirm && confirm !== pw ? "Passwords don't match" : null}>
-        <input type={show ? "text" : "password"} className="input" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
+        <SecretInput value={confirm} onChange={(e) => setConfirm(e.target.value)} label="Confirm password" />
       </Field>
     </div>
   );
+}
+
+/** Graduating batches students may sign up with (from the server; same rule as a fallback):
+ *  next year and the year after, e.g. 2027 and 2028 during 2026. */
+export function openBatches() {
+  const y = new Date().getFullYear();
+  return [y + 1, y + 2];
 }

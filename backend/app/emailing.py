@@ -19,7 +19,7 @@ from email.message import EmailMessage
 from email_validator import EmailNotValidError, validate_email
 from fastapi import HTTPException
 
-from .config import (CHECK_EMAIL_DELIVERABILITY, EMAIL_DEV_MODE, SMTP_FROM, SMTP_HOST, SMTP_PASSWORD, SMTP_PORT,
+from .config import (ALLOW_PERSONAL_EMAIL, CHECK_EMAIL_DELIVERABILITY, EMAIL_DEV_MODE, SMTP_FROM, SMTP_HOST, SMTP_PASSWORD, SMTP_PORT,
                      SMTP_USER)
 from .db import db
 
@@ -48,6 +48,8 @@ def check_email(email: str, *, official: bool = False, domain: str = None) -> st
     dom = domain_of(addr)
     if dom in DISPOSABLE:
         raise HTTPException(400, "Disposable email addresses are not allowed")
+    if ALLOW_PERSONAL_EMAIL and dom in FREE_PROVIDERS:
+        return addr  # testing switch: personal addresses skip the official/work-domain rules
     if official and dom in FREE_PROVIDERS:
         raise HTTPException(400, "Use your official email address, not a personal webmail account")
     if domain:
@@ -88,7 +90,10 @@ def _deliver(to: str, subject: str, text: str, html: str = None, reply_to: str =
             msg.get_payload()[1].add_related(logo, maintype="image", subtype="png", cid=f"<{LOGO_CID}>",
                                              filename="campus-connect.png")
     with _smtp() as s:
-        s.send_message(msg)
+        refused = s.send_message(msg)
+    if refused:  # the mail server turned the address down straight away
+        raise smtplib.SMTPRecipientsRefused(refused)
+    log.info("Email accepted by the mail server for %s: %s", to, subject)
 
 
 def _send(to: str, code: str) -> None:
@@ -111,9 +116,16 @@ async def issue_code(email: str) -> dict:
     if EMAIL_DEV_MODE:
         log.warning("DEV MODE — verification code for %s: %s", email, code)
         return {"sent": True, "dev_code": code}
+    from fastapi.concurrency import run_in_threadpool
     try:
-        _send(email, code)
+        # sending takes a few seconds: do it off the event loop so the rest of the site stays responsive
+        await run_in_threadpool(_send, email, code)
+    except smtplib.SMTPRecipientsRefused:
+        await db.email_codes.delete_one({"email": email})
+        log.error("Verification email refused for %s", email)
+        raise HTTPException(400, "The mail server refused this address. Check it's spelled correctly.")
     except Exception as exc:
+        await db.email_codes.delete_one({"email": email})  # so "Resend" isn't blocked by the 45-second wait
         log.error("Could not send verification email: %s", exc)
         raise HTTPException(502, "Could not send the verification email. Try again shortly.")
     return {"sent": True}
@@ -122,14 +134,14 @@ async def issue_code(email: str) -> dict:
 async def consume_code(email: str, code: str) -> None:
     rec = await db.email_codes.find_one({"email": email})
     if not rec:
-        raise HTTPException(400, "Request a verification code first")
+        raise HTTPException(400, "Your verification code has expired or was replaced. Send a new code and enter it.")
     if rec["expires_at"].replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
-        raise HTTPException(400, "The verification code has expired — request a new one")
+        raise HTTPException(400, "Your verification code has expired. Send a new code and enter it.")
     if rec["attempts"] >= MAX_ATTEMPTS:
-        raise HTTPException(400, "Too many attempts — request a new code")
+        raise HTTPException(400, "Too many wrong attempts. Send a new code and enter it.")
     if not secrets.compare_digest(rec["hash"], _hash((code or "").strip())):
         await db.email_codes.update_one({"_id": rec["_id"]}, {"$inc": {"attempts": 1}})
-        raise HTTPException(400, "Incorrect verification code")
+        raise HTTPException(400, "That verification code is wrong. Check the latest email, or send a new code.")
     await db.email_codes.delete_one({"_id": rec["_id"]})
 
 

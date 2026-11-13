@@ -1,12 +1,14 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertCircle, ArrowRight, CalendarClock, CheckCircle2, Circle, Clock, History, Inbox, Mail, Phone } from "lucide-react";
-import { Badge, Empty, ago, fmtDate, useApi, plural } from "./ui";
+import { AlertCircle, ArrowRight, CalendarClock, Check, CheckCircle2, Circle, Clock, History, Inbox, Mail, Phone, X } from "lucide-react";
+import { api } from "../api";
+import { Badge, Empty, ErrorNote, Modal, ago, fmtDate, useApi, plural } from "./ui";
 
 /** The steps of the shared drive workflow, so every portal shows where a drive is. */
 const FLOW = [
   ["draft", "Draft", "Company"],
   ["review", "Review", "Placement cell"],
-  ["approved", "Approved", "Placement cell"],
+  ["approved", "Confirmed", "Placement cell"],
   ["published", "Published", "Students see it"],
   ["in_progress", "Selection", "Company"],
   ["completed", "Completed", ""],
@@ -202,5 +204,47 @@ export function ChangeLine({ oldV, newV, field, className = "" }) {
         </div>
       ))}
     </div>
+  );
+}
+
+/** Accept or decline a connection request, with an optional note saying why.
+ *  `pending` is {conn, decision: "approve" | "reject"} or null. */
+export function ConnectionDecision({ pending, onClose, onDone }) {
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  if (!pending) return null;
+  const { conn, decision } = pending;
+  const accept = decision === "approve";
+  const name = conn.other?.name || "them";
+  const close = () => { setNote(""); setErr(null); onClose(); };
+  const submit = async (e) => {
+    e.preventDefault(); setBusy(true); setErr(null);
+    try {
+      await api(`/connections/${conn.id}/decision`, { method: "POST", body: { decision, note: note.trim() || null } });
+      setNote(""); onDone(`${name}: ${accept ? "connected" : "declined"}`);
+    } catch (e2) { setErr(e2.message); } finally { setBusy(false); }
+  };
+  return (
+    <Modal open onClose={close} title={accept ? `Accept ${name}?` : `Decline ${name}?`}>
+      <form onSubmit={submit} className="space-y-4 text-sm">
+        <p className="text-ink-muted">
+          {accept ? "You'll be connected and can coordinate drives and share contacts." : "They won't be able to post drives with you. They can send a new request later."}
+        </p>
+        <div>
+          <label className="label" htmlFor="decision-note">Note to {name} (optional)</label>
+          <textarea id="decision-note" className="input h-24" maxLength={300} value={note} onChange={(e) => setNote(e.target.value)} autoFocus
+            placeholder={accept ? "e.g. Happy to have you. Our placement season starts in August." : "e.g. We are only hosting product-company drives this season."} />
+          <p className="mt-1 text-xs text-ink-muted">Shown to them in Campus Connect and included in the email they get.</p>
+        </div>
+        <ErrorNote>{err}</ErrorNote>
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn-ghost" onClick={close}>Cancel</button>
+          <button className={accept ? "btn-primary" : "btn rounded-full bg-rose-600 px-5 text-white hover:bg-rose-700"} disabled={busy}>
+            {accept ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}{busy ? "Saving…" : accept ? "Accept" : "Decline"}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }

@@ -409,12 +409,13 @@ async def respond_connection(conn_id: str, body: DecisionIn, user: dict = Depend
     if conn["requested_by"] == ("college" if user["role"] == "coordinator" else "company"):
         raise HTTPException(400, "Waiting for the other side to respond")
     status = "accepted" if body.decision == "approve" else "declined"
+    note = (body.note or "").strip() or None
     await db.connections.update_one({"_id": conn["_id"]}, {"$set": {"status": status, "responded_at": datetime.now(timezone.utc),
-                                                                    "response_note": body.note}})
+                                                                    "response_note": note}})
     me = await _org_name(user)
-    await notify(await _other_side(conn, user), f"Connection {status}", f"{me} {status} your request." +
-                 (" You can now coordinate drives." if status == "accepted" else ""), "/connect", "connection",
-                 email_from=user)
+    text = f"{me} {status} your request." + (" You can now coordinate drives." if status == "accepted" else "")
+    await notify(await _other_side(conn, user), f"Connection {status}", text + (f" Note: “{note}”" if note else ""), "/connect", "connection",
+                 email_from=user, email_body=text + (f"\n\nTheir note:\n“{note}”" if note else ""))
     await log_update(entity="connection", entity_id=conn_id, college_id=conn["college_id"], company_id=conn["company_id"],
                      action=status, summary=f"Connection {status} by {me}", by=user)
     return {"id": conn_id, "status": status}

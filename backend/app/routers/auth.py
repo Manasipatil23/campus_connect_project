@@ -14,9 +14,10 @@ from pymongo.errors import DuplicateKeyError
 
 from ..auth import create_token, current_user, hash_password, is_allowed_admin, verify_password
 from ..db import db, serialize
-from ..emailing import check_email, consume_code, domain_of, issue_code
+from ..config import ALLOW_PERSONAL_EMAIL
+from ..emailing import FREE_PROVIDERS, check_email, consume_code, domain_of, issue_code
 from ..workflow import admins, college_staff, notify
-from ..schemas import AdminCodeIn, AdminSetupIn, CollegeSignupIn, CompanySignupIn, LoginIn, SendCodeIn, StudentSignupIn
+from ..schemas import AdminCodeIn, batch_error, open_batches, AdminSetupIn, CollegeSignupIn, CompanySignupIn, LoginIn, SendCodeIn, StudentSignupIn
 
 router = APIRouter(prefix="/api", tags=["auth"])
 PUBLIC_COLLEGE_FIELDS = {"name": 1, "short": 1, "city": 1, "state": 1, "tier": 1, "student_email_domain": 1}
@@ -57,6 +58,12 @@ async def _insert_user(doc: dict) -> dict:
     return doc
 
 
+@router.get("/grad-years")
+async def grad_years():
+    """The graduating batches students can sign up with, worked out from today's date."""
+    return {"years": open_batches()}
+
+
 @router.get("/colleges")
 async def colleges():
     """Approved colleges only — students can't join a college that isn't verified."""
@@ -88,6 +95,12 @@ async def send_code(body: SendCodeIn):
 
 
 # ---- platform admin: only addresses listed in ADMIN_EMAILS ----------------------------
+def _testing_personal(domain: str) -> bool:
+    """With ALLOW_PERSONAL_EMAIL on (testing), a Gmail-style domain skips the website-match and
+    one-organisation-per-domain checks, so many test colleges/companies can use personal inboxes."""
+    return ALLOW_PERSONAL_EMAIL and domain in FREE_PROVIDERS
+
+
 def _admin_email(email: str) -> str:
     email = email.strip().lower()
     if not is_allowed_admin(email):
@@ -124,6 +137,8 @@ async def admin_setup(body: AdminSetupIn):
 
 @router.post("/auth/register/student")
 async def register_student(body: StudentSignupIn):
+    if batch_error(body.grad_year):
+        raise HTTPException(400, batch_error(body.grad_year))
     college = await _approved_college(body.college_id)
     email = check_email(body.email, domain=college.get("student_email_domain"))
     if await db.users.find_one({"college_id": body.college_id, "roll_number": body.roll_number.strip().upper()}):
@@ -146,10 +161,12 @@ async def register_student(body: StudentSignupIn):
 @router.post("/auth/register/college")
 async def register_college(body: CollegeSignupIn):
     domain = body.email_domain.lower()
-    if domain not in body.website.lower():
+    personal = _testing_personal(domain)
+    if not personal and domain not in body.website.lower():
         raise HTTPException(400, "The email domain should match your college website")
     email = check_email(body.tpo_email, official=True, domain=domain)
-    if await db.colleges.find_one({"$or": [{"aishe_code": body.aishe_code.upper()}, {"email_domain": domain}]}):
+    same = [{"aishe_code": body.aishe_code.upper()}] + ([] if personal else [{"email_domain": domain}])
+    if await db.colleges.find_one({"$or": same}):
         raise HTTPException(409, "This college is already registered")
     await consume_code(email, body.code)
     now = datetime.now(timezone.utc)
@@ -171,10 +188,11 @@ async def register_company(body: CompanySignupIn):
     if not body.cin and not body.gstin:
         raise HTTPException(400, "Provide your CIN or GSTIN so we can verify the company")
     domain = body.email_domain.lower()
-    if domain not in body.website.lower():
+    personal = _testing_personal(domain)
+    if not personal and domain not in body.website.lower():
         raise HTTPException(400, "The email domain should match your company website")
     email = check_email(body.hr_email, official=True, domain=domain)
-    if await db.companies.find_one({"email_domain": domain}):
+    if not personal and await db.companies.find_one({"email_domain": domain}):
         raise HTTPException(409, "This company is already registered — ask your colleague to add you")
     await consume_code(email, body.code)
     company = body.model_dump(exclude={"hr_name", "hr_designation", "hr_email", "hr_phone", "code", "password"})

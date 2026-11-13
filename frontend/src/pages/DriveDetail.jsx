@@ -258,6 +258,16 @@ function StaffView({ d, reload }) {
       <div className="space-y-6 lg:col-span-2">
         {flash && <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800"><Check className="h-4 w-4" /> {flash}</div>}
         <ErrorNote>{!modal && err}</ErrorNote>
+        {d.reviewed_at && ["approved", "published", "in_progress", "completed"].includes(d.status) && (
+          <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+            <div>
+              <div className="font-medium">Confirmed by the placement cell{d.reviewed_at ? ` on ${fmtDate(d.reviewed_at)}` : ""}</div>
+              <div className="mt-0.5 text-emerald-800">{d.status === "approved" ? "Next, they publish it to eligible students." : "It's live for eligible students."}</div>
+              {d.review_note && <div className="mt-1.5">“{d.review_note}”</div>}
+            </div>
+          </div>
+        )}
         {d.review_note && ["changes_requested", "cancelled"].includes(d.status) && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"><b className="font-medium">Placement cell:</b> {d.review_note}</div>
         )}
@@ -328,7 +338,7 @@ function StaffView({ d, reload }) {
           {d.can.review && <button className="btn-primary w-full" onClick={() => setModal("review")}>Review this drive</button>}
           {d.can.publish && <button className="btn-primary w-full" onClick={() => run(() => api(`/drives/${d.id}/publish`, { method: "POST" }), (r) => `Published. ${r.notified} eligible students notified.`)}><Send className="h-4 w-4" /> Publish to students</button>}
           {d.status === "review" && !d.can.review && <p className="text-sm text-ink-muted">Waiting for the placement cell to review.</p>}
-          {d.status === "approved" && !d.can.publish && <p className="text-sm text-ink-muted">Approved. The placement cell will publish it to students.</p>}
+          {d.status === "approved" && !d.can.publish && <p className="text-sm text-ink-muted">Confirmed. The placement cell will publish it to students.</p>}
           {["published", "in_progress", "completed"].includes(d.status) && <Link to={`/drives/${d.id}/candidates`} className="btn-soft w-full"><Users className="h-4 w-4" /> {d.can.hire ? "Candidate pipeline" : "View applicants"}</Link>}
           {d.can.set_status && d.status === "published" && <button className="btn-ghost w-full" onClick={() => setModal({ status: "in_progress" })}>Close applications</button>}
           {d.can.set_status && ["published", "in_progress"].includes(d.status) && <button className="btn-ghost w-full" onClick={() => setModal({ status: "completed" })}>Mark completed</button>}
@@ -364,7 +374,7 @@ function StaffView({ d, reload }) {
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <button className="btn-ghost text-rose-600" onClick={() => run(() => api(`/drives/${d.id}/review`, { method: "POST", body: { decision: "decline", note: note || null } }), "Drive declined.")}>Decline</button>
           <button className="btn-ghost" onClick={() => run(() => api(`/drives/${d.id}/review`, { method: "POST", body: { decision: "changes", note: note || null } }), "Changes requested from the company.")}>Request changes</button>
-          <button className="btn-primary" onClick={() => run(() => api(`/drives/${d.id}/review`, { method: "POST", body: { decision: "approve", note: note || null } }), "Approved. Publish it when you're ready.")}><Check className="h-4 w-4" /> Approve</button>
+          <button className="btn-primary" onClick={() => run(() => api(`/drives/${d.id}/review`, { method: "POST", body: { decision: "approve", note: note || null } }), "Confirmed. Publish it when you're ready.")}><Check className="h-4 w-4" /> Confirm drive</button>
         </div>
       </Modal>
       <Modal open={Boolean(modal?.status)} onClose={() => setModal(null)} title={{ in_progress: "Close applications", completed: "Mark drive completed", cancelled: "Cancel drive" }[modal?.status] || ""}>

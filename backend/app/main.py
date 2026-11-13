@@ -26,6 +26,9 @@ async def train_model() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    from .config import ALLOW_PERSONAL_EMAIL
+    if ALLOW_PERSONAL_EMAIL:
+        log.warning("ALLOW_PERSONAL_EMAIL is on: Gmail and other personal addresses can register colleges and companies. Testing only.")
     try:
         await ensure_indexes()
         await train_model()

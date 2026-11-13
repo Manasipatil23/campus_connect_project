@@ -4,30 +4,26 @@ import { BadgeCheck, Check, Eye, Flag, MessageSquare, Send, Trash2, UserCheck, X
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { Badge, Empty, ErrorNote, Modal, PageHeader, Spinner, Tabs, ago, fmtDate, fmtTime, useApi } from "../components/ui";
-import { ActionsPanel, ChangeLine, ContactList } from "../components/workflow";
+import { ActionsPanel, ChangeLine, ConnectionDecision, ContactList } from "../components/workflow";
 
 /** Requests from the other side waiting for an answer, handled right here. */
 function ConnectionRequests({ isCollege, onChange }) {
   const { data, reload } = useApi("/connections");
   const [err, setErr] = useState(null);
   const [done, setDone] = useState(null);
+  const [deciding, setDeciding] = useState(null);   // hooks must come before the early return below
   const incoming = (data || []).filter((c) => c.incoming && c.status === "pending");
-  if (!data || incoming.length === 0) return null;
-  const respond = async (c, decision) => {
-    setErr(null);
-    try {
-      await api(`/connections/${c.id}/decision`, { method: "POST", body: { decision } });
-      setDone(`${c.other?.name}: ${decision === "approve" ? "connected" : "declined"}`);
-      reload(); onChange?.();
-    } catch (e) { setErr(e.message); }
-  };
+  if (!data || (incoming.length === 0 && !done)) return null;
+  const respond = (c, decision) => { setErr(null); setDeciding({ conn: c, decision }); };
   return (
     <section className="card p-6">
       <div className="mb-4 flex items-center gap-2">
         <Send className="h-4 w-4 text-brand-600" />
-        <h2 className="font-medium">{incoming.length} connection request{incoming.length > 1 ? "s" : ""} waiting for you</h2>
+        <h2 className="font-medium">{incoming.length ? `${incoming.length} connection request${incoming.length > 1 ? "s" : ""} waiting for you` : "Connection requests"}</h2>
       </div>
       {done && <div className="mb-3 flex items-center gap-1.5 text-sm text-emerald-700"><Check className="h-4 w-4" />{done}</div>}
+      <ConnectionDecision pending={deciding} onClose={() => setDeciding(null)}
+        onDone={(msg) => { setDeciding(null); setDone(msg); reload(); onChange?.(); }} />
       <ErrorNote>{err}</ErrorNote>
       <ul className="grid gap-4 md:grid-cols-2">
         {incoming.map((c) => (

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight, BadgeCheck, Building2, GraduationCap, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, Building2, Eye, EyeOff, GraduationCap, ShieldCheck } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import Logo from "../components/Logo";
@@ -25,7 +25,7 @@ function AuthSwitch({ mode }) {
   );
 }
 
-export function AuthShell({ title, accent, subtitle, children, wide, mode }) {
+export function AuthShell({ title, accent, subtitle, children, wide, mode, aside }) {
   return (
     <div className="grid min-h-screen xl:grid-cols-[minmax(420px,.75fr)_1fr]">
       <aside className="relative hidden overflow-hidden bg-ink xl:sticky xl:top-0 xl:block xl:h-screen xl:self-start">
@@ -33,7 +33,7 @@ export function AuthShell({ title, accent, subtitle, children, wide, mode }) {
         <div className="absolute inset-0 bg-gradient-to-bl from-brand-900/40 via-transparent to-transparent" />
         <div className="relative flex h-full flex-col p-12 text-white">
           <Link to="/" className="w-fit"><Logo dark /></Link>
-          <div className="mt-auto space-y-4">
+          {aside || <><div className="mt-auto space-y-4">
             {[[ShieldCheck, "Verified network", "Every college and company is checked."],
               [GraduationCap, "Approved by your college", "Your placement cell confirms every student."],
               [BadgeCheck, "Real feedback", "Know why you weren't shortlisted."]].map(([Icon, t, d]) => (
@@ -43,7 +43,7 @@ export function AuthShell({ title, accent, subtitle, children, wide, mode }) {
               </div>
             ))}
           </div>
-          <p className="mt-10 text-3xl font-medium leading-tight tracking-tight">Opportunities don't find you.<br /><span className="italic text-brand-300">You find them.</span></p>
+          <p className="mt-10 text-3xl font-medium leading-tight tracking-tight">Opportunities don't find you.<br /><span className="italic text-brand-300">You find them.</span></p></>}
         </div>
       </aside>
       <div className="relative isolate flex flex-col overflow-hidden px-5 py-6 sm:px-10">
@@ -125,6 +125,7 @@ export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [params, setParams] = useSearchParams();
@@ -163,7 +164,13 @@ export default function Login() {
         </div>
         <div>
           <label className="label" htmlFor="password">Password</label>
-          <input id="password" type="password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
+          <div className="relative">
+            <input id="password" type={showPw ? "text" : "password"} className="input pr-11" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
+            <button type="button" onClick={() => setShowPw(!showPw)} title={showPw ? "Hide" : "Show"} aria-label={showPw ? "Hide password" : "Show password"}
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-ink-muted hover:text-ink">
+              {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
         <ErrorNote>{error}</ErrorNote>
         <button className="btn-primary group w-full py-3.5" disabled={busy}>{busy ? "Signing in…" : <>{admin ? "Sign in as admin" : "Sign in"} <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" /></>}</button>

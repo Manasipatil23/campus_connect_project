@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight, BadgeCheck, Building2, GraduationCap, Search } from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, Building2, GraduationCap, Mail, Search } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { Tilt } from "../components/fx/motion";
-import { BRANCHES, EmailVerify, Field, INDIAN_STATES, PasswordFields, Stepper, check, domainFromUrl } from "../components/forms";
+import { BRANCHES, EmailVerify, Field, INDIAN_STATES, PasswordFields, Stepper, check, domainFromUrl, openBatches } from "../components/forms";
 import { ErrorNote, useApi } from "../components/ui";
 import { AuthShell } from "./Login";
 
@@ -69,12 +69,14 @@ function StudentSignup() {
   const { signIn } = useAuth();
   const navigate = useNavigate();
   const { data: colleges } = useApi("/colleges");
+  const { data: batchData } = useApi("/grad-years");
+  const batches = batchData?.years || openBatches();
   const [step, setStep] = useState(0);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const { f, setF, set, errors, validate } = useForm({
-    college_id: "", first_name: "", last_name: "", roll_number: "", branch: "", grad_year: String(new Date().getFullYear()),
+    college_id: "", first_name: "", last_name: "", roll_number: "", branch: "", grad_year: "",
     phone: "", email: "", code: "", password: "", confirm: "",
   });
   const clearDraft = useSignupDraft("student", f, setF, step, setStep, "email", 2);
@@ -86,7 +88,7 @@ function StudentSignup() {
     if (step === 0 && !validate({ college_id: (v) => (v ? null : "Choose your college") })) return;
     if (step === 1 && !validate({
       first_name: req("First name"), last_name: req("Last name"), roll_number: req("Roll number"), branch: req("Branch"),
-      phone: (v) => check(v, "phone"), grad_year: (v) => (v >= 2020 && v <= 2035 ? null : "Enter your graduation year"),
+      phone: (v) => check(v, "phone"), grad_year: (v) => (batches.includes(Number(v)) ? null : `Choose ${batches.join(" or ")}`),
     })) return;
     if (step === 2 && !validate({ code: (v) => (/^\d{6}$/.test(v) ? null : "Enter the 6-digit code from your email") })) return;
     if (!f.email_domain && domainFromUrl(f.website)) setF((x) => ({ ...x, email_domain: domainFromUrl(x.website) }));
@@ -101,7 +103,11 @@ function StudentSignup() {
       signIn(await api("/auth/register/student", { method: "POST", body: { ...body, grad_year: Number(f.grad_year) } }));
       clearDraft();
       navigate("/");
-    } catch (err) { setError(err.message); setBusy(false); }
+    } catch (err) {
+      setError(err.message); setBusy(false);
+      // a code problem can only be fixed on the email step: take them back there with a fresh box
+      if (/verification code/i.test(err.message)) { setF((x) => ({ ...x, code: "" })); setStep(2); }
+    }
   };
 
   return (
@@ -136,7 +142,12 @@ function StudentSignup() {
           <Field label="Branch" error={errors.branch}>
             <select className="input" value={f.branch} onChange={set("branch")}><option value="">Select…</option>{BRANCHES.map((b) => <option key={b}>{b}</option>)}</select>
           </Field>
-          <Field label="Graduation year" error={errors.grad_year}><input type="number" className="input" value={f.grad_year} onChange={set("grad_year")} /></Field>
+          <Field label="Graduation year" error={errors.grad_year} hint={`Open to the ${batches.join(" and ")} batches: this year's placement batch and the one just junior to it.`}>
+            <select className="input" value={f.grad_year} onChange={set("grad_year")}>
+              <option value="" disabled>Select…</option>
+              {batches.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </Field>
           <p className="text-xs text-ink-muted sm:col-span-2">Your placement cell at <b className="font-medium text-ink">{college?.name}</b> will check these details before approving you.</p>
         </div>
       )}
@@ -201,7 +212,11 @@ function CollegeSignup() {
         nirf_rank: f.nirf_rank ? Number(f.nirf_rank) : null, student_email_domain: f.student_email_domain || null } }));
       clearDraft();
       navigate("/");
-    } catch (err) { setError(err.message); setBusy(false); }
+    } catch (err) {
+      setError(err.message); setBusy(false);
+      // a code problem can only be fixed on the email step: take them back there with a fresh box
+      if (/verification code/i.test(err.message)) { setF((x) => ({ ...x, code: "" })); setStep(2); }
+    }
   };
   return (
     <form onSubmit={submit}>
@@ -301,7 +316,11 @@ function CompanySignup() {
         ...body, cin: f.cin ? f.cin.toUpperCase() : null, gstin: f.gstin ? f.gstin.toUpperCase() : null } }));
       clearDraft();
       navigate("/");
-    } catch (err) { setError(err.message); setBusy(false); }
+    } catch (err) {
+      setError(err.message); setBusy(false);
+      // a code problem can only be fixed on the email step: take them back there with a fresh box
+      if (/verification code/i.test(err.message)) { setF((x) => ({ ...x, code: "" })); setStep(1); }
+    }
   };
   return (
     <form onSubmit={submit}>
@@ -354,6 +373,64 @@ const KINDS = [
   { k: "company", icon: BadgeCheck, title: "Company", text: "Find colleges by tier and city and run drives on campus.", gate: "Verified by Campus Connect" },
 ];
 
+/** Left panel during sign-up: who checks the account, and that the decision arrives by email. */
+const NEXT = {
+  student: {
+    who: "Your placement cell",
+    steps: [
+      ["Verify your email", "Enter the 6-digit code we email you."],
+      ["Your placement cell checks you", "They match your roll number and details with college records, usually within a few working days."],
+      ["Watch your inbox", "We email you the moment you're approved, or if they need anything from you."],
+      ["Start applying", "See the drives you're eligible for and track every round."],
+    ],
+  },
+  college: {
+    who: "Campus Connect",
+    steps: [
+      ["Verify your official email", "Enter the 6-digit code we email the placement officer."],
+      ["Campus Connect verifies your college", "We check your AISHE code, NAAC grade and official domain, usually within a working day."],
+      ["Watch your inbox", "We email the placement officer as soon as it's approved, or if we need more details."],
+      ["Bring in students and companies", "Approve student sign-ups and connect with verified companies."],
+    ],
+  },
+  company: {
+    who: "Campus Connect",
+    steps: [
+      ["Verify your work email", "Enter the 6-digit code we email you."],
+      ["Campus Connect verifies your company", "We check your CIN/GSTIN and work domain, usually within a working day."],
+      ["Watch your inbox", "We email you as soon as it's approved, or if we need more details."],
+      ["Hire on campus", "Connect with verified colleges and run drives."],
+    ],
+  },
+};
+
+function NextSteps({ kind }) {
+  const n = NEXT[kind];
+  return (
+    <div className="mt-auto">
+      <div className="text-xs font-semibold uppercase tracking-eyebrow text-brand-300">What happens next</div>
+      <ol className="mt-5 space-y-0">
+        {n.steps.map(([t, d], i) => (
+          <li key={t} className="relative flex gap-4 pb-6 last:pb-0">
+            {i < n.steps.length - 1 && <span aria-hidden className="absolute left-[15px] top-9 h-[calc(100%-2.25rem)] w-px bg-white/15" />}
+            <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-medium ${i === 2 ? "bg-brand-500 text-white" : "border border-white/20 text-white/80"}`}>
+              {i === 2 ? <Mail className="h-4 w-4" /> : i + 1}
+            </span>
+            <div className="pt-1">
+              <div className="font-medium">{t}</div>
+              <div className="mt-0.5 text-sm leading-relaxed text-white/60">{d}</div>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm leading-relaxed text-white/75 backdrop-blur">
+        <b className="font-medium text-white">Keep checking your email</b>, including Spam, for updates from {n.who === "Campus Connect" ? "Campus Connect" : "your placement cell"}.
+        You can also sign in any time to see where things stand.
+      </div>
+    </div>
+  );
+}
+
 export default function Register() {
   const [params, setParams] = useSearchParams();
   const kind = params.get("as");
@@ -379,7 +456,7 @@ export default function Register() {
     );
   }
   return (
-    <AuthShell mode="signup" wide title={kind === "student" ? "Join as a" : "Register your"} accent={kind === "student" ? "student." : `${kind}.`}
+    <AuthShell mode="signup" wide aside={<NextSteps kind={kind} />} title={kind === "student" ? "Join as a" : "Register your"} accent={kind === "student" ? "student." : `${kind}.`}
       subtitle={<button className="inline-flex items-center gap-1 text-sm text-ink-muted hover:text-ink" onClick={() => setParams({})}><ArrowLeft className="h-3.5 w-3.5" /> Choose a different account type</button>}>
       {kind === "student" && <StudentSignup />}
       {kind === "college" && <CollegeSignup />}

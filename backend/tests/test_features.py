@@ -5,6 +5,7 @@ import os
 
 os.environ["SMTP_HOST"] = ""  # tests never send real email (dev mode)
 os.environ["CHECK_EMAIL_DELIVERABILITY"] = "false"  # test addresses use made-up domains
+os.environ["ALLOW_PERSONAL_EMAIL"] = "false"  # tests check the strict email rules
 
 import io
 import zipfile

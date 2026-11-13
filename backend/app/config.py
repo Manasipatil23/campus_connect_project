@@ -27,6 +27,10 @@ EMAIL_DEV_MODE = not SMTP_HOST
 # Reject email domains that have no mail server (DNS MX/A lookup)
 CHECK_EMAIL_DELIVERABILITY = os.getenv("CHECK_EMAIL_DELIVERABILITY", "true").lower() == "true"
 
+# TESTING ONLY: accept personal addresses (Gmail, Outlook, ...) for college, company and student
+# sign-ups instead of requiring an official/work domain. Turn it off before real users sign up.
+ALLOW_PERSONAL_EMAIL = os.getenv("ALLOW_PERSONAL_EMAIL", "false").lower() == "true"
+
 # Where the website lives; used for links in emails (sign-in, copy-code)
 APP_URL = os.getenv("APP_URL", "http://localhost:5173").rstrip("/")
 

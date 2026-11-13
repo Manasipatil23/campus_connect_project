@@ -7,6 +7,7 @@ import os
 
 os.environ["SMTP_HOST"] = ""  # tests never send real email (dev mode)
 os.environ["CHECK_EMAIL_DELIVERABILITY"] = "false"  # test addresses use made-up domains
+os.environ["ALLOW_PERSONAL_EMAIL"] = "false"  # tests check the strict email rules
 
 from datetime import date, timedelta
 
@@ -18,6 +19,7 @@ from app.auth import hash_password
 from app.config import DB_NAME, MONGO_URL
 from app.db import client_options
 from app.main import app
+from app.schemas import open_batches
 from tests import fixtures
 
 H = lambda t: {"Authorization": f"Bearer {t}"}
@@ -85,8 +87,8 @@ def run():
             pub = next(n for n in db.notifications.find({"created_at": {"$gte": since}, "title": {"$regex": "Fixes Analyst"}, "body": {"$regex": "LPA"}}))
             check("12 LPA" in pub["body"] and "12.0" not in pub["body"] and "-" not in pub["body"].split("apply by")[-1],
                   f"publish notification reads well: '{pub['body']}'")
-            approved = db.notifications.find_one({"created_at": {"$gte": since}, "title": {"$regex": "^Drive approved"}})
-            check(approved and approved["body"], "'Drive approved' notification has a message")
+            approved = db.notifications.find_one({"created_at": {"$gte": since}, "title": {"$regex": "^Drive confirmed"}})
+            check(approved and approved["body"], "'Drive confirmed' notification has a message")
 
             # 3. the recruiter can't accept an offer for the student
             for status in ("shortlisted",):
@@ -130,7 +132,7 @@ def run():
             assert code, "couldn't request a sign-up code for the test student"
             if code:
                 c.post("/api/auth/register/student", json=dict(first_name="Fix", last_name="Student", email="fix.student@student.wit.edu.in",
-                       code=code, password="password123", college_id=college_id, roll_number="FIX001", branch="IT", grad_year=2026, phone="9820011111"))
+                       code=code, password="password123", college_id=college_id, roll_number="FIX001", branch="IT", grad_year=open_batches()[0], phone="9820011111"))
                 check(any("New student sign-up" in t for t in notes(db, "tpo@campusconnect.dev", since)), "placement cell told about a student sign-up")
     finally:
         db.users.delete_many({"_id": {"$in": extra_users}})
@@ -142,7 +144,7 @@ def run():
             db.change_requests.delete_many({"drive_id": d})
         if other_college:
             db.colleges.delete_one({"_id": ObjectId(other_college)})
-        db.email_codes.delete_many({})
+        db.email_codes.delete_many({"email": "fix.student@student.wit.edu.in"})  # only this test's code, never real sign-ups
         fixtures.reset(db, since, connections=[conn])
         db.notifications.delete_many({"created_at": {"$gte": since}})
     print("all fix checks passed")

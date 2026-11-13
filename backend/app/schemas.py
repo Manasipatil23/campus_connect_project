@@ -1,4 +1,5 @@
 import re
+from datetime import date
 from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -92,6 +93,20 @@ def _normalise_url(value: Optional[str], site: Optional[str] = None) -> Optional
     if not _URL.match(v):
         raise ValueError("must be a valid link")
     return v
+
+
+def open_batches(today: Optional[date] = None) -> List[int]:
+    """Graduation years that may sign up: the batch in this year's placement season (graduating next
+    year) and the batch just junior to it. In 2026 that's 2027 and 2028; in 2027, 2028 and 2029."""
+    y = (today or date.today()).year
+    return [y + 1, y + 2]
+
+
+def batch_error(year: int) -> Optional[str]:
+    allowed = open_batches()
+    if year in allowed:
+        return None
+    return f"Sign-ups are open to the {allowed[0]} and {allowed[1]} graduating batches only"
 
 
 class ProfileIn(BaseModel):

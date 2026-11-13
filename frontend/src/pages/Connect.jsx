@@ -5,7 +5,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { Reveal, Tilt } from "../components/fx/motion";
 import { ErrorNote, Modal, PageHeader, Spinner, Tabs, ago, useApi, plural } from "../components/ui";
-import { ContactList } from "../components/workflow";
+import { ConnectionDecision, ContactList } from "../components/workflow";
 
 const KIND_LABEL = { info_request: "Asked for more information", date_confirmation: "Date confirmation", document_request: "Document request" };
 
@@ -112,10 +112,9 @@ export default function Connect() {
     if (!window.confirm("Cancel this connection request?")) return;
     try { await api(`/connections/${conn.id}/cancel`, { method: "POST" }); refresh(); } catch (e) { setErr(e.message); }
   };
-  const respond = async (conn, decision) => {
-    try { await api(`/connections/${conn.id}/decision`, { method: "POST", body: { decision } }); refresh(); }
-    catch (e) { setErr(e.message); }
-  };
+  const [deciding, setDeciding] = useState(null);
+  const [decided, setDecided] = useState(null);
+  const respond = (conn, decision) => { setErr(null); setDeciding({ conn, decision }); };
 
   return (
     <>
@@ -157,6 +156,9 @@ export default function Connect() {
         <Tabs value={show} onChange={setShow} options={[["all", "All"], ["connected", "Connected"], ["new", "Not connected"]]} />
       </div>
       <ErrorNote>{err || error}</ErrorNote>
+      {decided && <div className="mb-4 flex items-center gap-1.5 text-sm text-emerald-700"><Check className="h-4 w-4" />{decided}</div>}
+      <ConnectionDecision pending={deciding} onClose={() => setDeciding(null)}
+        onDone={(msg) => { setDeciding(null); setDecided(msg); refresh(); }} />
 
       {!dir ? <Spinner /> : (
         <div className="mt-2 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
@@ -182,6 +184,12 @@ export default function Connect() {
                       {isCollege ? <span>{o.industry} · {plural(o.drives_posted, "drive")} on Campus Connect</span>
                         : <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{plural(o.students, "student")} on Campus Connect</span>}
                     </div>
+                    {conn?.response_note && !conn.incoming && ["accepted", "declined"].includes(conn.status) && (
+                      <div className={`mt-4 rounded-xl p-3 text-sm ${conn.status === "accepted" ? "bg-emerald-50/70 text-emerald-900" : "bg-rose-50/70 text-rose-900"}`}>
+                        <div className="text-xs font-medium opacity-70">{conn.status === "accepted" ? "Their note when accepting" : "Why they declined"}</div>
+                        <p className="mt-0.5">“{conn.response_note}”</p>
+                      </div>
+                    )}
                     {conn?.status === "accepted" && conn.contacts?.length > 0 && (
                       <div className="mt-4 rounded-xl bg-brand-50/50 p-3"><ContactList contacts={conn.contacts} /></div>
                     )}
