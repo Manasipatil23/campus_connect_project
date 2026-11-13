@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowRight, AlertTriangle, Award, ListChecks, Loader2, Upload, BookOpen, CheckCircle2, X, FileText, GraduationCap, Layers, Mail, MessageSquare, Pause, Phone, Play, Search, Undo2, UserCheck, XCircle } from "lucide-react";
+import { ArrowRight, AlertTriangle, Award, ListChecks, Loader2, Upload, BookOpen, CheckCircle2, X, FileText, GraduationCap, Layers, Mail, MessageSquare, Pause, Phone, Play, Search, Undo2, UserCheck, XCircle, ClipboardX, Send } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { Empty, ErrorNote, Modal, PageHeader, Spinner, Stat, Tabs, ago, useApi, fmtDate, plural } from "../components/ui";
@@ -133,6 +133,61 @@ function Activity({ totals }) {
   );
 }
 
+/** Students who haven't filled in required details; one click sends them an auto-written notice. */
+function IncompleteProfiles() {
+  const { data, reload } = useApi("/college/students/incomplete");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(null);
+  const [err, setErr] = useState(null);
+  const [showAll, setShowAll] = useState(false);
+  if (!data) return null;
+  const list = data.students;
+  const recent = (s) => s.last_reminded_at && Date.now() - new Date(s.last_reminded_at.endsWith("Z") ? s.last_reminded_at : s.last_reminded_at + "Z").getTime() < 24 * 3600e3;
+  const due = list.filter((s) => !recent(s));
+  const send = async () => {
+    setErr(null); setBusy(true); setDone(null);
+    try { setDone(await api("/college/students/profile-reminder", { method: "POST", body: { student_ids: due.map((s) => s.id) } })); reload(); }
+    catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  return (
+    <section className="card p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 font-medium"><ClipboardX className="h-4 w-4 text-brand-600" />Incomplete profiles</h2>
+          <p className="mt-1 text-xs text-ink-muted">Required from every student: {data.required.join(", ")}.</p>
+        </div>
+        {list.length > 0 && (
+          <button className="btn-primary px-4 py-2 text-sm" disabled={busy || !due.length} onClick={send}>
+            <Send className="h-4 w-4" />{busy ? "Sending…" : due.length ? `Send mandatory notice (${due.length})` : "All reminded today"}
+          </button>
+        )}
+      </div>
+      {list.length === 0 ? <p className="mt-4 text-sm text-emerald-700">Every approved student has filled in the required details.</p> : (
+        <>
+          <p className="mt-3 text-sm text-ink-soft">
+            <b className="font-medium text-ink">{plural(list.length, "student")}</b> {list.length === 1 ? "hasn't" : "haven't"} completed their profile.
+            The notice goes to their <b className="font-medium">Notices</b>, as a notification and by email, naming exactly what each of them is missing.
+          </p>
+          <ErrorNote>{err}</ErrorNote>
+          {done && <div className="mt-3 rounded-xl bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">Notice sent to {plural(done.sent, "student")}{done.skipped_recently_reminded ? `; ${done.skipped_recently_reminded} already reminded in the last 24 hours` : ""}.</div>}
+          <ul className="mt-4 divide-y divide-black/[.05] text-sm">
+            {(showAll ? list : list.slice(0, 6)).map((s) => (
+              <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+                <div className="min-w-0"><div className="font-medium">{s.name}</div><div className="text-xs text-ink-muted">{[s.roll_number, s.branch, s.grad_year].filter(Boolean).join(" · ")}</div></div>
+                <div className="flex flex-wrap items-center justify-end gap-1">
+                  {s.missing.map((m) => <span key={m} className="chip bg-rose-50 text-rose-700">{m}</span>)}
+                  {recent(s) && <span className="chip bg-black/[.04] text-ink-muted">Reminded today</span>}
+                </div>
+              </li>
+            ))}
+          </ul>
+          {list.length > 6 && <button className="mt-2 text-sm text-brand-700 hover:underline" onClick={() => setShowAll(!showAll)}>{showAll ? "Show fewer" : `Show all ${list.length}`}</button>}
+        </>
+      )}
+    </section>
+  );
+}
+
 function Overview({ onApprovals }) {
   const [year, setYear] = useState(null);
   const { data, error, reload } = useApi(`/college/student-stats${year ? `?grad_year=${year}` : ""}`);
@@ -203,6 +258,8 @@ function Overview({ onApprovals }) {
         <Enrolment data={data} onSaved={reload} />
         <Activity totals={t} />
       </div>
+
+      <IncompleteProfiles />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="card p-6">

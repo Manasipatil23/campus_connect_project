@@ -141,6 +141,29 @@ def run():
             c.post(f"/api/connections/{cn['id']}/messages", headers=H(tpo), json={"text": "Email test: 20 Nov works."})
             check(wait_for(lambda: any("recruiter@campusconnect.dev" in s[1] and s[3] == "tpo@campusconnect.dev" for s in SENT)),
                   "the placement cell's reply is emailed to the company")
+
+            # ---- incomplete profiles: auto-written mandatory notice -------------------------------
+            lazy = db.users.insert_one({"name": "Lazy Student", "first_name": "Lazy", "email": "lazy@student.wit.edu.in", "role": "student",
+                                        "status": "active", "college_id": college_id, "password_hash": hash_password("password123"),
+                                        "phone": "9820000099", "profile": {"branch": "IT", "grad_year": SEASON},
+                                        "created_at": fixtures.started()}).inserted_id
+            temp.append(lazy)
+            inc = c.get("/api/college/students/incomplete", headers=H(tpo)).json()
+            me = next(x for x in inc["students"] if x["id"] == str(lazy))
+            check(me["missing"] == ["CGPA", "Resume", "Skills"], f"incomplete profile found with what's missing: {me['missing']}")
+            check(c.get("/api/college/students/incomplete", headers=H(stu)).status_code == 403, "students can't see who is incomplete")
+            SENT.clear()
+            r = c.post("/api/college/students/profile-reminder", headers=H(tpo), json={"student_ids": [str(lazy)]}).json()
+            check(r["sent"] == 1, "mandatory notice sent")
+            lazy_tok = c.post("/api/auth/login", json={"email": "lazy@student.wit.edu.in", "password": "password123"}).json()["token"]
+            notices = c.get("/api/announcements", headers=H(lazy_tok)).json()
+            check(any(n["title"] == "Mandatory: complete your profile" for n in notices), "it appears in the student's Notices")
+            note = db.notifications.find_one({"user_id": str(lazy), "title": "Action needed: complete your profile"})
+            check(note and "CGPA, Resume, Skills" in note["body"], "their notification names their own missing details")
+            check(wait_for(lambda: any(s[1] == ["lazy@student.wit.edu.in"] and "Mandatory" in s[2] for s in SENT)), "and it's emailed to them")
+            again = c.post("/api/college/students/profile-reminder", headers=H(tpo), json={"student_ids": [str(lazy)]}).json()
+            check(again["sent"] == 0 and again["skipped_recently_reminded"] == 1, "not sent twice within 24 hours")
+            db.announcements.delete_many({"recipient_ids": str(lazy)})
     finally:
         tids = [str(x) for x in temp]
         db.approvals.delete_many({"target_id": {"$in": tids}})

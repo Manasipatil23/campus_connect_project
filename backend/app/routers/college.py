@@ -12,7 +12,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Up
 
 from ..auth import require_role
 from ..db import db, serialize
-from ..schemas import BulkDecisionIn, ConnectIn, DecisionIn, MessageIn, NameReviewIn
+from ..config import APP_URL
+from ..schemas import ProfileReminderIn, BulkDecisionIn, ConnectIn, DecisionIn, MessageIn, NameReviewIn
 from ..workflow import CONNECTION_STATUS, email_decision, email_note, record_approval, college_staff, company_staff, log_update, notify, now
 from .drives import oid
 
@@ -178,7 +179,7 @@ async def remind_students(body: RemindIn, user: dict = Depends(coordinator)):
         subj, mail, html = email_message(
             f"{college['name']} placement cell: please check Campus Connect", f"Hi {first},", text,
             f"{user['name']}\n{user.get('designation') or 'Placement cell'}, {college['name']}",
-            ("Open Campus Connect", "http://localhost:5173/login"))
+            ("Open Campus Connect", f"{APP_URL}/login"))
         result = await run_in_threadpool(send_email, s["email"], subj, mail, user["email"], html)
         if result == "failed":
             failed += 1
@@ -187,6 +188,78 @@ async def remind_students(body: RemindIn, user: dict = Depends(coordinator)):
         await db.users.update_one({"_id": s["_id"]}, {"$set": {"last_reminded_at": now()}})
         sent += 1
     return {"sent": sent, "skipped_recently_reminded": skipped, "failed": failed, "email_dev_mode": EMAIL_DEV_MODE}
+
+
+# details every student must fill in before drives can use their profile
+REQUIRED_DETAILS = [
+    ("cgpa", "CGPA", lambda u, p: p.get("cgpa") in (None, "", 0)),
+    ("branch", "Branch", lambda u, p: not p.get("branch")),
+    ("grad_year", "Graduation year", lambda u, p: not p.get("grad_year")),
+    ("phone", "Mobile number", lambda u, p: not u.get("phone")),
+    ("resume", "Resume", lambda u, p: not (u.get("resume") or {}).get("text")),
+    ("skills", "Skills", lambda u, p: not p.get("skills")),
+]
+
+
+def missing_details(u: dict) -> List[str]:
+    p = u.get("profile") or {}
+    return [label for _, label, empty in REQUIRED_DETAILS if empty(u, p)]
+
+
+@router.get("/college/students/incomplete")
+async def incomplete_profiles(user: dict = Depends(coordinator)):
+    """Approved students who haven't filled in all the required details."""
+    out = []
+    async for s in db.users.find({"role": "student", "college_id": user["college_id"], "status": "active"}, {"password_hash": 0}):
+        miss = missing_details(s)
+        if miss:
+            out.append({"id": str(s["_id"]), "name": s["name"], "email": s["email"], "roll_number": s.get("roll_number"),
+                        "branch": (s.get("profile") or {}).get("branch"), "grad_year": (s.get("profile") or {}).get("grad_year"),
+                        "missing": miss, "last_reminded_at": s.get("last_profile_reminder_at")})
+    out.sort(key=lambda x: (-len(x["missing"]), x["name"]))
+    return {"required": [label for _, label, _ in REQUIRED_DETAILS], "students": out}
+
+
+@router.post("/college/students/profile-reminder")
+async def profile_reminder(body: ProfileReminderIn, background: BackgroundTasks, user: dict = Depends(coordinator)):
+    """Auto-written notice to students with missing details: it appears in their Notices, as a
+    notification naming *their* missing fields, and by email. At most once a day per student."""
+    q = {"role": "student", "college_id": user["college_id"], "status": "active"}
+    if body.student_ids:
+        q["_id"] = {"$in": [oid(i) for i in body.student_ids]}
+    college = await db.colleges.find_one({"_id": oid(user["college_id"])}, {"name": 1})
+    recent = now() - timedelta(hours=24)
+    t, sent, skipped = now(), [], 0
+    async for s in db.users.find(q, {"password_hash": 0}):
+        miss = missing_details(s)
+        if not miss:
+            continue
+        if _aware(s.get("last_profile_reminder_at")) and _aware(s["last_profile_reminder_at"]) > recent:
+            skipped += 1
+            continue
+        sid, first = str(s["_id"]), s.get("first_name") or s["name"].split()[0]
+        listed = ", ".join(miss)
+        await notify([sid], "Action needed: complete your profile",
+                     f"Please add your {listed}. This is mandatory for placement drives.", "/profile", "announcement")
+        background.add_task(email_note, s["email"], s["name"], "Mandatory: complete your Campus Connect profile",
+                            f"Your Campus Connect profile is missing: {listed}.\n\n"
+                            "Filling these in is mandatory. Drives check your CGPA, branch and graduation year for eligibility, "
+                            "and companies screen your resume and skills, so an incomplete profile can keep you out of drives.\n\n"
+                            "Please sign in and complete your profile as soon as possible.", user)
+        await db.users.update_one({"_id": s["_id"]}, {"$set": {"last_profile_reminder_at": t}})
+        sent.append(sid)
+    if sent:
+        required = ", ".join(label for _, label, _ in REQUIRED_DETAILS)
+        await db.announcements.insert_one({
+            "title": "Mandatory: complete your profile",
+            "body": ("Our records show your Campus Connect profile is incomplete. Every student must fill in: "
+                     f"{required}.\n\nDrives use these details to check your eligibility, and companies screen your resume "
+                     "and skills. Please open your Profile and Resume pages and complete them as soon as possible."),
+            "audience": "profile_incomplete", "audience_label": "Students with incomplete profiles", "recipient_ids": sent,
+            "college_id": user["college_id"], "by_id": user["id"], "by_name": user["name"], "auto": True, "created_at": t})
+        await log_update(entity="announcement", entity_id="profile-reminder", college_id=user["college_id"], action="announcement",
+                         summary=f"Profile reminder sent to {len(sent)} students", by=user, notified=f"{len(sent)} students")
+    return {"sent": len(sent), "skipped_recently_reminded": skipped, "college": college["name"] if college else None}
 
 
 @router.post("/college/students/{student_id}/decision")

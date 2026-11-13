@@ -377,6 +377,10 @@ class MessageIn(BaseModel):
     drive_id: Optional[str] = None
 
 
+class ProfileReminderIn(BaseModel):
+    student_ids: List[str] = Field(default=[], max_length=5000)   # empty: every student with missing details
+
+
 class AnnouncementIn(BaseModel):
     title: str = Field(min_length=3, max_length=140)
     body: str = Field(min_length=5, max_length=5000)
