@@ -7,17 +7,20 @@ Demo logins (one per role) and the two organisations they belong to:
     student@campusconnect.dev   / student123    student at Westbridge Institute of Technology
     tpo@campusconnect.dev       / tpo123        Westbridge's placement cell
     recruiter@campusconnect.dev / recruiter123  HR at Nimbus Analytics
-    admin@campusconnect.dev     / admin123      platform admin
+
+There is no demo platform admin: only addresses in ADMIN_EMAILS (.env) can be admin, and they set
+their password from the sign-in page with an emailed code. --wipe keeps those admin accounts.
 """
 import asyncio
 import sys
 from datetime import datetime, timezone
 
 from .auth import hash_password
+from .config import ADMIN_EMAILS
 from .db import db, ensure_indexes
 
 NOW = datetime.now(timezone.utc)
-DEMO_EMAILS = ["student@campusconnect.dev", "tpo@campusconnect.dev", "recruiter@campusconnect.dev", "admin@campusconnect.dev"]
+DEMO_EMAILS = ["student@campusconnect.dev", "tpo@campusconnect.dev", "recruiter@campusconnect.dev"]
 COLLEGE_DOMAIN, COMPANY_DOMAIN = "wit.edu.in", "nimbusanalytics.dev"
 
 # collections that only ever hold activity (all of it is removed by --wipe)
@@ -49,7 +52,6 @@ async def ensure_demo_accounts() -> None:
     college_id = await _org("colleges", {"$or": [{"email_domain": COLLEGE_DOMAIN}, {"short": "WIT"}]}, COLLEGE)
     company_id = await _org("companies", {"name": COMPANY["name"]}, COMPANY)
     users = [
-        {"email": "admin@campusconnect.dev", "name": "Platform Admin", "role": "admin", "password": "admin123"},
         {"email": "tpo@campusconnect.dev", "name": "Anita Kulkarni", "role": "coordinator", "password": "tpo123",
          "designation": "Training & Placement Officer", "phone": "9820012345", "college_id": college_id},
         {"email": "recruiter@campusconnect.dev", "name": "Priya Menon", "role": "recruiter", "password": "recruiter123",
@@ -78,8 +80,8 @@ async def wipe_everything_but_demo() -> None:
     for name in ACTIVITY:
         r = await db[name].delete_many({})
         print(f"  {name:16} removed {r.deleted_count}")
-    r = await db.users.delete_many({"email": {"$nin": DEMO_EMAILS}})
-    print(f"  {'users':16} removed {r.deleted_count} (kept the {len(DEMO_EMAILS)} demo logins)")
+    r = await db.users.delete_many({"$nor": [{"email": {"$in": DEMO_EMAILS}}, {"email": {"$in": sorted(ADMIN_EMAILS)}, "role": "admin"}]})
+    print(f"  {'users':16} removed {r.deleted_count} (kept the {len(DEMO_EMAILS)} demo logins and the platform admin)")
     r = await db.colleges.delete_many({"_id": {"$nin": keep_colleges}})
     print(f"  {'colleges':16} removed {r.deleted_count} (kept Westbridge)")
     r = await db.companies.delete_many({"_id": {"$nin": keep_companies}})

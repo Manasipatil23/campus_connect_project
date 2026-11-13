@@ -43,9 +43,21 @@ class RegisterIn(BaseModel):
     college_id: Optional[str] = None
 
 
+class AdminCodeIn(BaseModel):
+    email: EmailStr
+
+
+class AdminSetupIn(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6)
+    password: str = Field(min_length=8, max_length=128)
+    name: Optional[str] = Field(default=None, max_length=80)
+
+
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
+    role: Optional[Literal["admin"]] = None  # the platform-admin sign-in only accepts admin accounts
 
 
 class OtherLink(BaseModel):

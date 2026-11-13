@@ -5,11 +5,13 @@ import os
 
 os.environ["SMTP_HOST"] = ""  # tests never send real email (dev mode)
 os.environ["CHECK_EMAIL_DELIVERABILITY"] = "false"  # test addresses use made-up domains
+os.environ["ADMIN_EMAILS"] = "test.admin@campusconnect.dev"  # only this address may be admin during the test
 
 from bson import ObjectId
 from fastapi.testclient import TestClient
 from pymongo import MongoClient
 
+from app.auth import hash_password
 from app.config import DB_NAME, MONGO_URL
 from app.db import client_options
 from app.main import app
@@ -43,7 +45,22 @@ def run():
             check(c.get("/api/college/students", headers=H(tpo)), 403, "college: pending TPO locked out")
             check(c.get("/api/colleges").__class__ and c.post("/api/auth/send-code", json={"email": "x@student.testinst.edu.in", "kind": "student", "college_id": col_id}), 400, "student: can't join unapproved college")
 
-            adm = c.post("/api/auth/login", json={"email": "admin@campusconnect.dev", "password": "admin123"}).json()["token"]
+            # platform admin: only the address in ADMIN_EMAILS, password set through an emailed code
+            db.users.insert_one({"email": "rogue.admin@campusconnect.dev", "name": "Rogue", "role": "admin", "status": "active",
+                                 "password_hash": hash_password("password123")})
+            check(c.post("/api/auth/login", json={"email": "rogue.admin@campusconnect.dev", "password": "password123"}), 403,
+                  "admin: an admin account not on the list can't sign in")
+            check(c.post("/api/auth/admin/send-code", json={"email": "someone@campusconnect.dev"}), 403, "admin: setup refused for other emails")
+            check(c.post("/api/auth/admin/send-code", json={"email": "tpo@testinst.edu.in"}), 403, "admin: a TPO can't make themselves admin")
+            ac = check(c.post("/api/auth/admin/send-code", json={"email": "Test.Admin@campusconnect.dev"}), 200, "admin: code sent to the approved address")["dev_code"]
+            check(c.post("/api/auth/admin/setup", json={"email": "test.admin@campusconnect.dev", "code": "000000", "password": "adminpass1"}), 400,
+                  "admin: wrong code rejected")
+            adm = check(c.post("/api/auth/admin/setup", json={"email": "test.admin@campusconnect.dev", "code": ac, "password": "adminpass1",
+                                                              "name": "Test Admin"}), 200, "admin: password set, signed in")["token"]
+            check(c.post("/api/auth/login", json={"email": "test.admin@campusconnect.dev", "password": "adminpass1", "role": "admin"}), 200,
+                  "admin: signs in on the admin form")
+            check(c.post("/api/auth/login", json={"email": "tpo@testinst.edu.in", "password": "password123", "role": "admin"}), 403,
+                  "admin: the admin form refuses other accounts")
             check(c.post(f"/api/admin/colleges/{col_id}/decision", json={"decision": "approve"}, headers=H(adm)), 400, "admin: tier required")
             check(c.post(f"/api/admin/colleges/{col_id}/decision", json={"decision": "approve", "tier": 2}, headers=H(adm)), 200, "admin: college approved")
             entry = db.approvals.find_one({"kind": "college", "target_id": col_id})
@@ -88,6 +105,7 @@ def run():
             db.connections.delete_many({"college_id": col_id})
             db.approvals.delete_many({"$or": [{"target_id": col_id}, {"college_id": col_id}]})
             db.drives.delete_many({"college_id": col_id})
+        db.users.delete_many({"email": {"$in": ["rogue.admin@campusconnect.dev", "test.admin@campusconnect.dev"]}})
         db.experiences.delete_many({"company": "Some Co"})
         db.email_codes.delete_many({})
         fixtures.reset(db, since)

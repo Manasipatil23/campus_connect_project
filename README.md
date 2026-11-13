@@ -86,11 +86,12 @@ API docs: http://localhost:8000/docs
 | Student (Westbridge Institute of Technology) | student@campusconnect.dev | student123 |
 | Placement cell (Westbridge) | tpo@campusconnect.dev | tpo123 |
 | Company (Nimbus Analytics) | recruiter@campusconnect.dev | recruiter123 |
-| Platform admin | admin@campusconnect.dev | admin123 |
+
+**Platform admin:** there is no demo admin. Only the addresses listed in `ADMIN_EMAILS` in `backend/.env` can be platform admin. The first time (or after a forgotten password), open **Sign in → Platform admin sign in → First time, or forgot your password?**: a code is emailed to that address and you choose the password. Any other admin account is refused.
 
 **Email verification:** without SMTP settings the backend runs in dev mode and shows the 6-digit code on screen (and in the server log). Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` and `SMTP_FROM` in `backend/.env` to send real emails.
 
-**Tests** (each creates its own data and removes it afterwards): `CHECK_EMAIL_DELIVERABILITY=false .venv/bin/python -m tests.test_onboarding` walks the whole chain: college signup → admin approval → student signup → placement-cell approval → company connection → drive → shared experience. It cleans up after itself.
+**Tests** (each creates its own data and removes it afterwards): `.venv/bin/python -m tests.test_onboarding` walks the whole chain: college signup → admin approval → student signup → placement-cell approval → company connection → drive → shared experience. It cleans up after itself.
 
 There is no dummy data: dashboards start at zero and fill up as real colleges, companies and students use the site. The demo logins belong to an empty demo college (Westbridge Institute of Technology) and company (Nimbus Analytics). Placement health shows "not enough data yet" until there are real past placement outcomes to learn from.
 

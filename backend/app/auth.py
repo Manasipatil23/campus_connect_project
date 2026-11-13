@@ -43,6 +43,11 @@ async def current_user(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -
     return serialize(user)
 
 
+def is_allowed_admin(email) -> bool:
+    from .config import ADMIN_EMAILS
+    return bool(email) and email.lower() in ADMIN_EMAILS
+
+
 async def active_user(user: dict = Depends(current_user)) -> dict:
     """Signed-in users whose account has been approved.
 
@@ -50,6 +55,8 @@ async def active_user(user: dict = Depends(current_user)) -> dict:
     recruiters are approved when the platform admin approves their college or
     company. Pending users can still call /auth/me to see their status.
     """
+    if user.get("role") == "admin" and not is_allowed_admin(user.get("email")):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Platform admin access is limited to approved addresses")
     if user.get("status", "active") == "suspended":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Your placement cell has put your account on hold")
     if user.get("status", "active") != "active":

@@ -6,7 +6,7 @@ from bson import ObjectId
 
 from app.auth import hash_password
 
-DEMO = ["student@campusconnect.dev", "tpo@campusconnect.dev", "recruiter@campusconnect.dev", "admin@campusconnect.dev"]
+DEMO = ["student@campusconnect.dev", "tpo@campusconnect.dev", "recruiter@campusconnect.dev"]
 
 RESUME = """Demo Student
 Education: B.E. Computer Engineering, CGPA 8.1

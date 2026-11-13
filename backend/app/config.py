@@ -29,3 +29,7 @@ CHECK_EMAIL_DELIVERABILITY = os.getenv("CHECK_EMAIL_DELIVERABILITY", "true").low
 
 # Where the website lives; used for links in emails (sign-in, copy-code)
 APP_URL = os.getenv("APP_URL", "http://localhost:5173").rstrip("/")
+
+# Who may be platform admin (comma-separated). Kept in .env so the address isn't in the code.
+# Any admin account whose email isn't listed here is refused everywhere.
+ADMIN_EMAILS = {e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()}

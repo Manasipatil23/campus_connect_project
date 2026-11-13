@@ -12,11 +12,11 @@ from bson.errors import InvalidId
 from fastapi import APIRouter, Depends, HTTPException
 from pymongo.errors import DuplicateKeyError
 
-from ..auth import create_token, current_user, hash_password, verify_password
+from ..auth import create_token, current_user, hash_password, is_allowed_admin, verify_password
 from ..db import db, serialize
 from ..emailing import check_email, consume_code, domain_of, issue_code
 from ..workflow import admins, college_staff, notify
-from ..schemas import CollegeSignupIn, CompanySignupIn, LoginIn, SendCodeIn, StudentSignupIn
+from ..schemas import AdminCodeIn, AdminSetupIn, CollegeSignupIn, CompanySignupIn, LoginIn, SendCodeIn, StudentSignupIn
 
 router = APIRouter(prefix="/api", tags=["auth"])
 PUBLIC_COLLEGE_FIELDS = {"name": 1, "short": 1, "city": 1, "state": 1, "tier": 1, "student_email_domain": 1}
@@ -85,6 +85,41 @@ async def send_code(body: SendCodeIn):
     if await db.users.find_one({"email": email}):
         raise HTTPException(409, "An account with this email already exists — sign in instead")
     return {"email": email, **await issue_code(email)}
+
+
+# ---- platform admin: only addresses listed in ADMIN_EMAILS ----------------------------
+def _admin_email(email: str) -> str:
+    email = email.strip().lower()
+    if not is_allowed_admin(email):
+        raise HTTPException(403, "This email isn't a platform admin address")
+    return email
+
+
+@router.post("/auth/admin/send-code")
+async def admin_send_code(body: AdminCodeIn):
+    """First sign-in or a forgotten password: email a code to the approved admin address."""
+    email = _admin_email(body.email)
+    other = await db.users.find_one({"email": email, "role": {"$ne": "admin"}}, {"role": 1})
+    if other:
+        raise HTTPException(409, f"This email is already used by a {other['role']} account")
+    return {"email": email, **await issue_code(email)}
+
+
+@router.post("/auth/admin/setup")
+async def admin_setup(body: AdminSetupIn):
+    """Set (or reset) the platform admin password after proving the inbox with the emailed code."""
+    email = _admin_email(body.email)
+    if await db.users.find_one({"email": email, "role": {"$ne": "admin"}}):
+        raise HTTPException(409, "This email is already used by another account")
+    await consume_code(email, body.code)
+    now = datetime.now(timezone.utc)
+    existing = await db.users.find_one({"email": email})
+    name = (body.name or "").strip() or (existing or {}).get("name") or "Platform Admin"
+    await db.users.update_one({"email": email}, {
+        "$set": {"name": name, "role": "admin", "status": "active", "email_verified": True,
+                 "password_hash": hash_password(body.password), "last_login_at": now, "last_seen_at": now},
+        "$setOnInsert": {"email": email, "created_at": now}}, upsert=True)
+    return await _session(await db.users.find_one({"email": email}))
 
 
 @router.post("/auth/register/student")
@@ -160,6 +195,10 @@ async def login(body: LoginIn):
     user = await db.users.find_one({"email": body.email.lower()})
     if not user or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(401, "Incorrect email or password")
+    if body.role == "admin" and user.get("role") != "admin":
+        raise HTTPException(403, "This isn't a platform admin account. Use the regular sign-in.")
+    if user.get("role") == "admin" and not is_allowed_admin(user["email"]):
+        raise HTTPException(403, "Platform admin access is limited to approved addresses")
     now = datetime.now(timezone.utc)
     await db.users.update_one({"_id": user["_id"]}, {"$set": {"last_login_at": now, "last_seen_at": now},
                                                       "$inc": {"login_count": 1}})
