@@ -205,6 +205,9 @@ def _story_fallback(facts: dict) -> dict:
         lines.append(f"The company's reason was: {facts['company_reason']}.")
     for r in facts.get("reasons", [])[:3]:
         lines.append(r["detail"])
+    vs = (facts.get("resume_vs_the_selected_candidate") or {}).get("differences") or []
+    if vs:
+        lines.append(f"Your resume also differed from the selected candidate's: {vs[0]['title'].lower()} ({vs[0]['detail'].rstrip('.')}).")
     tips = facts.get("tips") or []
     return {"explanation": " ".join(lines) or "The company moved forward with other candidates in this round.",
             "next_step": tips[0]["title"] + "." if tips else "Review the gaps above before the next drive.",

@@ -11,7 +11,7 @@ from ..db import db, serialize
 from ..ml.ats import extract_skills, normalize_skill, score_resume
 from ..ml.eligibility import check_eligibility
 from ..ml.health import health_score
-from ..ml.insights import (assessment_insights, headline, reached, resume_insights,
+from ..ml.insights import (assessment_insights, compare_with_selected, headline, reached, resume_insights,
                            rule_suggestions_resume)
 from ..ml.llm import explain_decision, personalised_suggestions, review_resume
 from ..documents import extract_text
@@ -234,7 +234,7 @@ def _timeline(app: dict, drive: dict) -> list:
     return out
 
 
-async def _decision_story(app: dict, user: dict, drive: dict, kind: str, ins: dict) -> dict:
+async def _decision_story(app: dict, user: dict, drive: dict, kind: str, ins: dict, vs: Optional[dict] = None) -> dict:
     """Claude's explanation, saved on the application and rewritten only when the facts change.
     Rule-based versions aren't saved, so adding an API key later upgrades them on the next visit."""
     import hashlib
@@ -245,6 +245,8 @@ async def _decision_story(app: dict, user: dict, drive: dict, kind: str, ins: di
              "sections": [{"section": x["section"], "you": x["you"], "cleared_at_least": x.get("cleared_band", x.get("cleared_min"))}
                           for x in ins.get("sections", [])] if kind == "assessment" else None,
              "tips": ((ins.get("suggestions") or {}).get("items") if isinstance(ins.get("suggestions"), dict) else ins.get("suggestions") or [])[:3]}
+    if vs and vs.get("available"):
+        facts["resume_vs_the_selected_candidate"] = {"differences": vs["reasons"], "skills_only_you_showed": vs["you_only"]}
     facts = {k: v for k, v in facts.items() if v not in (None, [], "")}
     key = hashlib.sha256(json.dumps([kind, facts], sort_keys=True, default=str).encode()).hexdigest()[:16]
     saved = app.get("decision_story") or {}
@@ -308,10 +310,19 @@ async def application_detail(app_id: str, user: dict = Depends(student_only)):
         if why and target and insights.get(target):
             insights[target]["company_reason"] = why
 
+    # turned down after resume screening: compare the resume with the candidate(s) who went further
+    next_stage = {"assessment": "assessment_cleared", "interview": "offered", "offer": "accepted"}.get(app.get("rejected_round"))
+    if app["status"] == "rejected" and next_stage:
+        ahead_apps = [p for p in peers if p["_id"] != app["_id"] and reached(p, next_stage)]
+        missing = [ObjectId(p["student_id"]) for p in ahead_apps if not p.get("profile_snapshot")]
+        profiles = {str(u["_id"]): u.get("profile", {}) async for u in db.users.find({"_id": {"$in": missing}})}
+        ahead = [{"app": p, "profile": p.get("profile_snapshot") or profiles.get(p["student_id"], {})} for p in ahead_apps]
+        insights["vs_selected"] = compare_with_selected(app, app.get("profile_snapshot") or user.get("profile", {}), ahead, drive)
+
     # a short personal explanation of the decision, written by Claude from the facts above
     target = {"assessment": "assessment", "resume_screening": "resume"}.get(app.get("rejected_round"))
     if app["status"] == "rejected" and target and insights.get(target) and insights[target].get("available"):
-        insights[target]["story"] = await _decision_story(app, user, drive, target, insights[target])
+        insights[target]["story"] = await _decision_story(app, user, drive, target, insights[target], insights.get("vs_selected"))
 
     # recruiter-approved explanations only - never private notes or scorecards
     review = app.get("screening_review") or {}

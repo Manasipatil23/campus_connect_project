@@ -249,6 +249,59 @@ def _assessment_brief(you: Dict[str, float], cleared: List[dict], you_cleared: b
             "percentile": None, "sections": sections, "reasons": reasons[:6], "suggestions": suggestions[:4]}
 
 
+def compare_with_selected(you_app: dict, you_profile: dict, ahead: List[dict], drive: dict) -> dict:
+    """For a student turned down at a later round: how their resume and profile compared with the
+    candidate(s) who went further. Nobody is named and no exact figure of theirs is shown: scores are
+    rounded down to the nearest 5, and profile details are described as "more" or "higher"."""
+    if not ahead:
+        return {"available": False}
+    one = len(ahead) == 1
+    who = "The selected candidate" if one else "The selected candidates"
+    their = "the selected candidate" if one else "every selected candidate"
+    ats = you_app["ats"]
+    mine = set(ats["skills_found"]) | set(ats["matched_skills"])
+    required = list(drive.get("required_skills") or [])
+    sets = [set(c["app"]["ats"]["skills_found"]) | set(c["app"]["ats"]["matched_skills"]) for c in ahead]
+    shown_by_all = set.intersection(*sets)
+    shown_by_any = set.union(*sets)
+    reasons = []
+
+    lacked = [s for s in required if s in shown_by_all and s not in mine]
+    if lacked:
+        reasons.append({"weight": "high", "title": f"{who} showed {len(lacked)} required skill{'s' if len(lacked) > 1 else ''} your resume didn't",
+                        "detail": f"{', '.join(lacked[:8])}. The job lists {'these' if len(lacked) > 1 else 'this'} as required."})
+    cov = _band(min(c["app"]["ats"]["skill_coverage"] for c in ahead))
+    if ats["skill_coverage"] < cov:
+        reasons.append({"weight": "high", "title": "Covered fewer of the job's required skills",
+                        "detail": f"{who} covered {cov}% or more of the required skills; your resume covered {round(ats['skill_coverage'])}%."})
+    match = _band(min(c["app"]["ats"]["score"] for c in ahead))
+    if ats["score"] < match:
+        reasons.append({"weight": "medium", "title": "Lower resume match for this job",
+                        "detail": f"{who} matched this job at {match}/100 or more; yours matched at {round(ats['score'])}/100."})
+    for key, noun in (("internships", "internships"), ("projects", "projects"), ("certifications", "certifications")):
+        mine_n = you_profile.get(key) or 0
+        if min((c["profile"].get(key) or 0) for c in ahead) > mine_n:
+            hint = " Your profile lists none: if you have some, add them." if mine_n == 0 else ""
+            reasons.append({"weight": "medium" if key == "internships" else "low", "title": f"{who} had more {noun}",
+                            "detail": f"{their.capitalize()} listed more {noun} than you.{hint}"})
+    if you_profile.get("cgpa") and min((c["profile"].get("cgpa") or 0) for c in ahead) > you_profile["cgpa"]:
+        reasons.append({"weight": "low", "title": f"{who} had a higher CGPA",
+                        "detail": f"You met the drive's minimum, but {their} had a higher CGPA."})
+    impact = _band(min(c["app"]["ats"]["impact"] for c in ahead))
+    if ats["impact"] + 10 < impact:
+        reasons.append({"weight": "medium", "title": "Fewer measurable results in your bullets",
+                        "detail": f"{who} put numbers on their work more often (results like “cut report time by 40%”)."})
+    theirs_sections = set.intersection(*[set(c["app"]["ats"]["sections_found"]) for c in ahead])
+    for sec in sorted(theirs_sections - set(ats["sections_found"]))[:2]:
+        reasons.append({"weight": "low", "title": f"No “{SECTION_LABELS.get(sec, sec)}” section",
+                        "detail": f"{who} had one."})
+    order = {"high": 0, "medium": 1, "low": 2}
+    reasons.sort(key=lambda r: order[r["weight"]])
+    you_only = [s for s in required if s in mine and s not in shown_by_any]
+    return {"available": True, "group": len(ahead), "who": who, "reasons": reasons[:7],
+            "you_only": you_only, "both": [s for s in required if s in mine and s in shown_by_all]}
+
+
 def rule_suggestions_resume(ins: dict) -> List[dict]:
     out = []
     for s in ins["gaps"]["required_skills"][:4]:

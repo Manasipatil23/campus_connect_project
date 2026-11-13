@@ -90,6 +90,38 @@ function Compare({ label, you, median, min, unit, max }) {
   );
 }
 
+/** Turned down at a later round: how the resume compared with whoever went further (anonymous, rounded). */
+function VsSelected({ v }) {
+  return (
+    <section className="space-y-4">
+      <div>
+        <div className="eyebrow">Your resume vs. {v.group === 1 ? "the selected candidate" : "the selected candidates"}</div>
+        <h2 className="mt-3 text-2xl font-medium tracking-tight">Your resume was shortlisted. Here's how it compared with {v.group === 1 ? "the candidate who was selected" : "the candidates who were selected"}.</h2>
+        <p className="mt-2 text-xs text-ink-muted">Nobody is named, and their scores are rounded down to protect their privacy.</p>
+      </div>
+      {v.reasons.length > 0 ? (
+        <div className="card p-6">
+          <h3 className="mb-4 font-medium">Where {v.group === 1 ? "their" : "their"} resume{v.group === 1 ? " was" : "s were"} stronger</h3>
+          <ul className="divide-y divide-black/[.05]">
+            {v.reasons.map((r, i) => (
+              <li key={i} className="flex gap-4 py-3.5 first:pt-0 last:pb-0">
+                <span className={`chip h-fit w-16 shrink-0 justify-center capitalize ${WEIGHT[r.weight]}`}>{r.weight}</span>
+                <div><div className="text-sm font-medium">{r.title}</div><div className="mt-0.5 text-sm text-ink-muted">{r.detail}</div></div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : <div className="card p-6 text-sm text-ink-muted">Your resume was as strong as {v.group === 1 ? "the selected candidate's" : "the selected candidates'"} for this job. The difference came from the later round.</div>}
+      {(v.you_only.length > 0 || v.both.length > 0) && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {v.you_only.length > 0 && <div className="card p-5 text-sm"><div className="font-medium text-emerald-700">Only you showed</div><p className="mt-1 text-ink-muted">{v.you_only.join(", ")}. Required for this job and not on {v.group === 1 ? "the selected resume" : "any selected resume"}: keep these prominent.</p></div>}
+          {v.both.length > 0 && <div className="card p-5 text-sm"><div className="font-medium">You both showed</div><p className="mt-1 text-ink-muted">{v.both.join(", ")}</p></div>}
+        </div>
+      )}
+    </section>
+  );
+}
+
 /** The decision in a few sentences: written by Claude from the student's results, or plain sentences as a backup. */
 function Story({ story }) {
   if (!story?.explanation) return null;
@@ -381,7 +413,8 @@ export default function ApplicationDetail() {
         </div>
       )}
       {insights.assessment && app.rejected_round === "assessment" && <AssessmentInsights ins={insights.assessment} />}
-      {insights.resume && <ResumeInsights ins={insights.resume} />}
+      {insights.vs_selected?.available && <VsSelected v={insights.vs_selected} />}
+      {insights.resume && !(insights.vs_selected?.available && insights.resume.cleared) && <ResumeInsights ins={insights.resume} />}
       {insights.assessment && app.rejected_round !== "assessment" && <AssessmentInsights ins={insights.assessment} />}
     </div>
   );
