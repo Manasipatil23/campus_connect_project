@@ -171,3 +171,73 @@ def review_resume(resume_text: str, ats: dict, jd_text: Optional[str] = None) ->
     except Exception as exc:  # no credentials, network, refusal, bad JSON
         log.warning("LLM review unavailable, using rule-based feedback: %s", exc)
         return _fallback(ats)
+
+
+# ---- "why wasn't I selected?" written as a short personal explanation -------------------------
+STORY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "explanation": {"type": "string"},
+        "next_step": {"type": "string"},
+    },
+    "required": ["explanation", "next_step"],
+    "additionalProperties": False,
+}
+
+STORY_SYSTEM = (
+    "You write to a college student who was not selected in one round of a campus placement drive. "
+    "You get the job, the round, the company's stated reason (if any), the student's own results, and "
+    "facts the platform has already worked out (cut-offs, gaps, missing skills). Write 3-5 short "
+    "sentences in plain, warm, honest English, addressed to the student as 'you':\n"
+    "- Say what decided it first, using the numbers given.\n"
+    "- Mention what went well, if anything, so it doesn't read as a list of failures.\n"
+    "- Connect the gap to what this particular job needs.\n"
+    "Use only the facts provided. Never invent scores, skills, experience or reasons, and never "
+    "describe other students individually. No markdown, no bullet points, no headings. Then give "
+    "one concrete next step the student can start this week, in one sentence."
+)
+
+
+def _story_fallback(facts: dict) -> dict:
+    """The same facts as plain sentences, for when Claude isn't available."""
+    lines = []
+    if facts.get("company_reason"):
+        lines.append(f"The company's reason was: {facts['company_reason']}.")
+    for r in facts.get("reasons", [])[:3]:
+        lines.append(r["detail"])
+    tips = facts.get("tips") or []
+    return {"explanation": " ".join(lines) or "The company moved forward with other candidates in this round.",
+            "next_step": tips[0]["title"] + "." if tips else "Review the gaps above before the next drive.",
+            "source": "rules"}
+
+
+def explain_decision(drive: dict, round_name: str, facts: dict, resume_text: str = "") -> dict:
+    """A short, personal explanation of why the student didn't clear `round_name`, written by Claude
+    from facts the platform computed (already privacy-safe). Falls back to the rule-based sentences."""
+    if LLM_ENABLED == "off":
+        return _story_fallback(facts)
+    prompt = (
+        f"Job: {drive.get('role')} at {drive.get('company')}\n"
+        f"Required skills: {', '.join(drive.get('required_skills') or []) or 'none listed'}\n"
+        f"Round the student did not clear: {round_name}\n\n"
+        f"Facts (use only these):\n{json.dumps(facts, ensure_ascii=False, default=str)}"
+        + (f"\n\nThe student's resume (for context only):\n{resume_text[:6000]}" if resume_text else "")
+    )
+    try:
+        response = _get_client().with_options(timeout=45).beta.messages.create(
+            model=LLM_MODEL,
+            max_tokens=2000,
+            system=STORY_SYSTEM,
+            messages=[{"role": "user", "content": prompt}],
+            output_config={"effort": "low", "format": {"type": "json_schema", "schema": STORY_SCHEMA}},
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+        )
+        if response.stop_reason in ("refusal", "max_tokens"):
+            raise RuntimeError(f"LLM stopped with {response.stop_reason}")
+        text = next(b.text for b in response.content if b.type == "text")
+        out = json.loads(text)
+        return {"explanation": out["explanation"].strip(), "next_step": out["next_step"].strip(), "source": "llm"}
+    except Exception as exc:
+        log.warning("LLM explanation unavailable, using rule-based: %s", exc)
+        return _story_fallback(facts)

@@ -90,6 +90,21 @@ function Compare({ label, you, median, min, unit, max }) {
   );
 }
 
+/** The decision in a few sentences: written by Claude from the student's results, or plain sentences as a backup. */
+function Story({ story }) {
+  if (!story?.explanation) return null;
+  return (
+    <div className="rounded-2xl border border-brand-100 bg-gradient-to-br from-brand-50/80 to-white p-6">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="font-medium">In short</h3>
+        {story.source === "llm" && <span className="flex items-center gap-1 text-xs text-ink-muted"><Sparkles className="h-3.5 w-3.5 text-brand-500" />Written by AI from your results</span>}
+      </div>
+      <p className="mt-3 text-[15px] leading-relaxed text-ink">{story.explanation}</p>
+      {story.next_step && <p className="mt-3 text-sm text-ink-soft"><span className="font-medium text-brand-800">Next step: </span>{story.next_step}</p>}
+    </div>
+  );
+}
+
 /** "Why" list shared by both rounds, plus the company's own reason when they gave one. */
 function WhyList({ ins, title = "Why you weren't selected" }) {
   return (
@@ -115,6 +130,7 @@ function ResumeInsights({ ins }) {
   if (ins.brief) return (
     <section className="space-y-6">
       <div><div className="eyebrow">Resume screening</div><h2 className="mt-3 text-2xl font-medium tracking-tight">{ins.headline}</h2></div>
+      {!ins.cleared && <Story story={ins.story} />}
       {!ins.cleared && <WhyList ins={ins} />}
       {ins.strengths?.length > 0 && <p className="text-sm text-ink-muted"><span className="font-medium text-ink">Working for you: </span>your resume showed {ins.strengths.join(", ")}, which the job requires.</p>}
       {!ins.cleared && <Suggestions items={ins.suggestions?.items} source={ins.suggestions?.source} />}
@@ -129,6 +145,7 @@ function ResumeInsights({ ins }) {
         <div className="mt-2"><PrivacyNote n={ins.cohort_size} what="were shortlisted" /></div>
       </div>
 
+      {!ins.cleared && <Story story={ins.story} />}
       {!ins.cleared && ins.company_reason && <div className="rounded-xl bg-rose-50/70 px-4 py-3 text-sm text-rose-900"><span className="font-medium">The company's reason: </span>{ins.company_reason}</div>}
       {!ins.cleared && ins.reasons.length > 0 && (
         <div className="card p-6">
@@ -195,6 +212,7 @@ function AssessmentInsights({ ins }) {
           <div className="mt-2 text-3xl font-medium tabular-nums">{ins.cutoff_estimate != null ? `${ins.cutoff_estimate}%+` : "—"}</div>
           <div className="text-xs text-ink-muted">{ins.cutoff_estimate != null ? "Overall score of those who cleared, rounded down" : "Nobody cleared this round"}</div></div>
       </div>
+      {!ins.cleared && <Story story={ins.story} />}
       {!ins.cleared && ins.reasons?.length > 0 && <WhyList ins={ins} />}
       <div className="card p-6">
         <h3 className="font-medium">Section by section</h3>
@@ -222,6 +240,7 @@ function AssessmentInsights({ ins }) {
         <h2 className="mt-3 text-2xl font-medium tracking-tight">{ins.headline}</h2>
         <div className="mt-2"><PrivacyNote n={ins.cohort_size} what="cleared the assessment" /></div>
       </div>
+      {!ins.cleared && <Story story={ins.story} />}
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="card p-5"><div className="text-xs text-ink-muted">Your overall</div><div className="mt-2 text-3xl font-medium tabular-nums">{ins.total}%</div></div>
         <div className="card p-5"><div className="text-xs text-ink-muted">Estimated cut-off</div><div className="mt-2 text-3xl font-medium tabular-nums">{ins.cutoff_estimate}%</div><div className="text-xs text-ink-muted">Lowest overall among those who cleared</div></div>

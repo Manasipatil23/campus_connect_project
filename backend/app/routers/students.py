@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -12,7 +13,7 @@ from ..ml.eligibility import check_eligibility
 from ..ml.health import health_score
 from ..ml.insights import (assessment_insights, headline, reached, resume_insights,
                            rule_suggestions_resume)
-from ..ml.llm import personalised_suggestions, review_resume
+from ..ml.llm import explain_decision, personalised_suggestions, review_resume
 from ..documents import extract_text
 from ..schemas import batch_error, FUNNEL, ROUND_LABELS, STAGE_LABELS, TERMINAL, NameIn, OfferResponseIn, ProfileIn, ResumeTextIn
 from ..workflow import ACCEPTING, STUDENT_VISIBLE, college_staff, drive_company_staff, drive_label, log_update, notify, now
@@ -233,6 +234,30 @@ def _timeline(app: dict, drive: dict) -> list:
     return out
 
 
+async def _decision_story(app: dict, user: dict, drive: dict, kind: str, ins: dict) -> dict:
+    """Claude's explanation, saved on the application and rewritten only when the facts change.
+    Rule-based versions aren't saved, so adding an API key later upgrades them on the next visit."""
+    import hashlib
+    facts = {"company_reason": ins.get("company_reason"), "reasons": ins.get("reasons", [])[:6],
+             "strengths": ins.get("strengths", []) if kind == "resume" else None,
+             "your_overall_percent": ins.get("total") if kind == "assessment" else None,
+             "cut_off_percent": ins.get("cutoff_estimate") if kind == "assessment" else None,
+             "sections": [{"section": x["section"], "you": x["you"], "cleared_at_least": x.get("cleared_band", x.get("cleared_min"))}
+                          for x in ins.get("sections", [])] if kind == "assessment" else None,
+             "tips": ((ins.get("suggestions") or {}).get("items") if isinstance(ins.get("suggestions"), dict) else ins.get("suggestions") or [])[:3]}
+    facts = {k: v for k, v in facts.items() if v not in (None, [], "")}
+    key = hashlib.sha256(json.dumps([kind, facts], sort_keys=True, default=str).encode()).hexdigest()[:16]
+    saved = app.get("decision_story") or {}
+    if saved.get("key") == key and saved.get("source") == "llm":
+        return {k: saved[k] for k in ("explanation", "next_step", "source")}
+    round_name = "Online assessment" if kind == "assessment" else "Resume screening"
+    resume_text = app.get("resume_snapshot") or (user.get("resume") or {}).get("text", "")
+    story = await run_in_threadpool(explain_decision, drive, round_name, facts, resume_text if kind == "resume" else "")
+    if story["source"] == "llm":
+        await db.applications.update_one({"_id": app["_id"]}, {"$set": {"decision_story": {**story, "key": key}}})
+    return story
+
+
 @router.get("/me/applications/{app_id}")
 async def application_detail(app_id: str, user: dict = Depends(student_only)):
     app = await db.applications.find_one({"_id": oid(app_id), "student_id": user["id"]})
@@ -283,6 +308,11 @@ async def application_detail(app_id: str, user: dict = Depends(student_only)):
         if why and target and insights.get(target):
             insights[target]["company_reason"] = why
 
+    # a short personal explanation of the decision, written by Claude from the facts above
+    target = {"assessment": "assessment", "resume_screening": "resume"}.get(app.get("rejected_round"))
+    if app["status"] == "rejected" and target and insights.get(target) and insights[target].get("available"):
+        insights[target]["story"] = await _decision_story(app, user, drive, target, insights[target])
+
     # recruiter-approved explanations only - never private notes or scorecards
     review = app.get("screening_review") or {}
     screening = None
@@ -295,7 +325,7 @@ async def application_detail(app_id: str, user: dict = Depends(student_only)):
             c.pop("corrected", None)
     feedback = [{k: f.get(k) for k in ("id", "round", "strengths", "improvements", "at")}
                 for f in app.get("feedback", []) if f.get("share_with_student")]
-    hidden = ("resume_snapshot", "resume_suggestions", "screening_review", "feedback")
+    hidden = ("resume_snapshot", "resume_suggestions", "screening_review", "feedback", "decision_story")
     drive_view = serialize({k: v for k, v in drive.items() if k not in ("rounds", "owner_name", "recruiter_id")})
     drive_view["rounds"] = [student_round(r) for r in drive.get("rounds", [])]
     return {
