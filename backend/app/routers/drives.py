@@ -26,7 +26,7 @@ from ..ml.ats import evidence_report, extract_skills, normalize_skill, score_res
 from ..ml.eligibility import check_eligibility, eligibility_rules
 from ..schemas import (FUNNEL, ROUND_AT_STATUS, STAGE_LABELS, TERMINAL, AssessmentIn, ChangeDecisionIn, DriveIn,
                        DrivePatch, DriveReviewIn, DriveStatusIn, FeedbackIn, HoldIn, JDIn, RoundIn, RoundPatch,
-                       ScreeningReviewIn, StatusIn)
+                       ScreeningReviewIn, StatusIn, season_batch)
 from ..workflow import (ACCEPTING, DRIVE_STATUS, FIELD_LABELS, LIVE, ROUND_STATUS, STUDENT_FACING_FIELDS,
                         STUDENT_VISIBLE, affected_students, college_staff, drive_applicants, drive_company_staff,
                         drive_label, eligible_students, log_update, notify, now, lpa, day)
@@ -253,6 +253,8 @@ async def create_drive(body: DriveIn, user: dict = Depends(managers)):
                                      - set(doc["required_skills"]))
     doc["assessment_sections"] = [s.strip() for s in doc["assessment_sections"] if s.strip()]
     doc["rounds"] = [_new_round(r) for r in doc["rounds"]]
+    # every drive is for the batch being placed this season (June-May); nobody picks the year
+    doc["criteria"]["grad_years"] = [season_batch()]
 
     if user["role"] == "coordinator":
         status = "approved"  # the college owns it; it can publish when ready
@@ -352,6 +354,8 @@ async def patch_drive(drive_id: str, body: DrivePatch, user: dict = Depends(mana
         raise HTTPException(403, "Not your drive")
     if drive["status"] in ("completed", "cancelled"):
         raise HTTPException(400, f"This drive is {DRIVE_STATUS[drive['status']].lower()}")
+    if body.criteria is not None:
+        body.criteria.grad_years = [season_batch()]   # the batch isn't editable: always this season's
     changes = {k: _clean(k, v) for k, v in body.model_dump(exclude_none=True, exclude={"reason"}).items()
                if drive.get(k) != _clean(k, v)}
     if not changes:

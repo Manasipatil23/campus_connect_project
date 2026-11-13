@@ -5,6 +5,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import active_user, require_role
+from ..schemas import season_batch
 from ..db import db, serialize
 from ..ml.eligibility import check_eligibility
 from ..schemas import AnnouncementIn, IssueIn, IssuePatch
@@ -105,13 +106,15 @@ async def pending_actions(user: dict = Depends(active_user)):
 
 # ---- announcements -------------------------------------------------------------------
 async def _audience(body: AnnouncementIn, user: dict):
+    # notices go to this season's batch; the junior batch only sees interview experiences
+    season = {"$or": [{"profile.grad_year": {"$lte": season_batch()}}, {"profile.grad_year": None}]}
     if body.audience == "all":
-        return [str(s["_id"]) async for s in db.users.find({"role": "student", "status": "active",
-                                                            "college_id": user["college_id"]}, {"_id": 1})], "All students"
+        return [str(s["_id"]) async for s in db.users.find({"role": "student", "status": "active", **season,
+                                                            "college_id": user["college_id"]}, {"_id": 1})], f"All {season_batch()} students"
     if body.audience == "branches":
         if not body.branches:
             raise HTTPException(400, "Choose at least one branch")
-        return [str(s["_id"]) async for s in db.users.find({"role": "student", "status": "active", "college_id": user["college_id"],
+        return [str(s["_id"]) async for s in db.users.find({"role": "student", "status": "active", "college_id": user["college_id"], **season,
                                                             "profile.branch": {"$in": body.branches}}, {"_id": 1})], ", ".join(body.branches)
     if not body.drive_id:
         raise HTTPException(400, "Choose a drive")

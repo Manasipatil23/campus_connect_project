@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { BadgeCheck, Clock, Flag, Monitor, Plus, Search, ThumbsUp, Trash2, X } from "lucide-react";
 import { api } from "../api";
+import { useAuth } from "../auth";
 import { Reveal } from "../components/fx/motion";
 import { ErrorNote, Modal, PageHeader, Spinner, Tabs, useApi, fmtDate, plural } from "../components/ui";
 import { Field } from "../components/forms";
@@ -134,6 +135,7 @@ function ShareForm({ onDone }) {
 }
 
 export default function Experiences() {
+  const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const company = params.get("company") || "";
   const [round, setRound] = useState("");
@@ -165,7 +167,13 @@ export default function Experiences() {
     <>
       <PageHeader eyebrow="Shared by students" title="Interview" accent="experiences."
         subtitle="What was asked in each round, how hard it felt, and what people would do differently. Verified posts come from students who really sat that round."
-        action={<button className="btn-primary" onClick={() => setSharing(true)}><Plus className="h-4 w-4" /> Share yours</button>} />
+        action={!user?.junior && <button className="btn-primary" onClick={() => setSharing(true)}><Plus className="h-4 w-4" /> Share yours</button>} />
+      {user?.junior && (
+        <div className="mb-6 rounded-2xl border border-brand-100 bg-brand-50/60 px-5 py-4 text-sm text-brand-900">
+          <b className="font-medium">This placement season is for the {user.season_batch} batch.</b> Yours ({user.profile?.grad_year}) starts in June {user.season_batch}.
+          Until then, read how seniors' interviews went to get ready. Drives, rounds and results open up when your season begins.
+        </div>
+      )}
 
       <div className="mb-8 flex gap-3 overflow-x-auto pb-2 [scrollbar-width:none]">
         <button onClick={() => setParams({})} className={`shrink-0 rounded-2xl border px-5 py-4 text-left transition ${!company ? "border-ink bg-ink text-white" : "border-black/[.06] bg-white hover:border-brand-200"}`}>
@@ -191,7 +199,7 @@ export default function Experiences() {
 
       <ErrorNote>{error}</ErrorNote>
       {!data ? <Spinner /> : shown.length === 0 ? (
-        <div className="card p-10 text-center text-sm text-ink-muted">No experiences here yet. Be the first to share one.</div>
+        <div className="card p-10 text-center text-sm text-ink-muted">{user?.junior ? "No experiences here yet. Seniors share them after their interviews, so check back during the season." : "No experiences here yet. Be the first to share one."}</div>
       ) : (
         <div className="columns-1 gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
           {shown.map((e, i) => <Reveal key={e.id} delay={(i % 4) * 60}><ExperienceCard e={e} onHelpful={helpful} onDelete={remove} onReport={report} /></Reveal>)}

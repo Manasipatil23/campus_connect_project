@@ -4,6 +4,7 @@ import { Check, FileText, Loader2, Plus, Sparkles, Trash2, Upload, X } from "luc
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { ErrorNote, PageHeader, useApi } from "../components/ui";
+import { SeasonBatch, seasonBatch } from "../components/forms";
 
 const BRANCHES = ["Computer", "IT", "EXTC", "Electronics", "Mechanical", "AI & DS", "Civil", "Chemical"];
 const ROUND_KINDS = ["Online assessment", "Group discussion", "Technical interview", "HR interview", "Other"];
@@ -17,7 +18,7 @@ export default function DriveForm() {
   const [f, setF] = useState({
     college_id: "", sections: "Aptitude, Coding, Technical MCQ",
     company: user.company || "", role: "", description: "", ctc_lpa: "", location: "", tier: "regular",
-    skills: "", preferred: "", min_cgpa: "6.5", max_backlogs: "0", branches: [], grad_year: String(new Date().getFullYear()), deadline: "",
+    skills: "", preferred: "", min_cgpa: "6.5", max_backlogs: "0", branches: [], deadline: "",
   });
   const [rounds, setRounds] = useState([{ name: "Online assessment", kind: "Online assessment", date: "", time: "" }]);
   const [confirmed, setConfirmed] = useState(false);
@@ -96,7 +97,7 @@ export default function DriveForm() {
             min_cgpa: f.min_cgpa === "" ? null : Number(f.min_cgpa),
             max_backlogs: f.max_backlogs === "" ? null : Number(f.max_backlogs),
             branches: f.branches,
-            grad_years: f.grad_year ? [Number(f.grad_year)] : [],
+            grad_years: [seasonBatch()],
           },
         },
       });
@@ -192,11 +193,11 @@ export default function DriveForm() {
 
         <fieldset className="rounded-2xl border border-black/[.06] p-5">
           <legend className="px-1 text-sm font-medium">Eligibility</legend>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div><label className="label">Min CGPA</label><input type="number" step="0.1" className="input" value={f.min_cgpa} onChange={set("min_cgpa")} /></div>
             <div><label className="label">Max backlogs</label><input type="number" min="0" className="input" value={f.max_backlogs} onChange={set("max_backlogs")} /></div>
-            <div><label className="label">Graduation year</label><input type="number" className="input" value={f.grad_year} onChange={set("grad_year")} /></div>
           </div>
+          <div className="mt-4"><div className="label">Graduating batch</div><SeasonBatch /></div>
           <div className="mt-4">
             <div className="label">Branches (none selected = all)</div>
             <div className="flex flex-wrap gap-2">

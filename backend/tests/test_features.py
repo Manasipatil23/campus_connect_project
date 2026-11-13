@@ -19,6 +19,9 @@ from app.config import DB_NAME, MONGO_URL
 from app.db import client_options
 from app.main import app
 from tests import fixtures
+from app.schemas import season_batch
+
+SEASON = season_batch()  # the batch being placed this season
 
 H = lambda t: {"Authorization": f"Bearer {t}"}
 JD = "Data Analyst at Nimbus. You will build Power BI dashboards on SQL data and automate reports in Python."
@@ -95,12 +98,56 @@ def run():
             again = c.post("/api/drives", headers=H(tpo), json={"company": "X", "role": "Y", "description": JD, "ctc_lpa": 6, "jd_file_id": pdf_id})
             check(again.status_code == 400, "a JD file can't be attached to a second drive")
 
+            # ---- a drive's graduating batch can be corrected after publishing --------------------
+            from app.schemas import open_batches
+            season = open_batches()[0]
+            rec = login("recruiter@campusconnect.dev", "recruiter123")
+            fixtures.ensure_connection(db, college_id, c.get("/api/auth/me", headers=H(rec)).json()["company_id"])
+            wrong = c.post("/api/drives", headers=H(rec), json={
+                "company": "x", "role": "Batch Fix Analyst", "description": JD, "ctc_lpa": 6, "college_id": college_id,
+                "required_skills": ["sql"], "criteria_confirmed": True, "submit": True, "criteria": {"grad_years": [season - 1]}}).json()
+            drive_ids.append(wrong["id"])
+            check(wrong["criteria"]["grad_years"] == [season], "a new drive is always for this season's batch, whatever was sent")
+            db.drives.update_one({"_id": ObjectId(wrong["id"])}, {"$set": {"criteria.grad_years": [season - 1]}})  # an old drive from before the rule
+            c.post(f"/api/drives/{wrong['id']}/review", headers=H(tpo), json={"decision": "approve"})
+            c.post(f"/api/drives/{wrong['id']}/publish", headers=H(tpo))
+            db.users.update_one({"email": "student@campusconnect.dev"}, {"$set": {"profile.grad_year": season}})
+            sd = c.get(f"/api/drives/{wrong['id']}", headers=H(stu)).json()
+            check(not sd["eligible"] and sd["ineligible_reasons"] == [f"This drive is for the {season - 1} batch; you graduate in {season}"],
+                  "wrong batch explained in plain words")
+            r = c.patch(f"/api/drives/{wrong['id']}", headers=H(rec), json={"criteria": {"min_cgpa": None, "grad_years": [season - 5]}}).json()
+            check(r.get("proposed") == ["criteria"], "company proposes the batch fix")
+            ch = next(x for x in c.get("/api/changes", headers=H(tpo)).json() if x["drive_id"] == wrong["id"])
+            c.post(f"/api/changes/{ch['id']}/decision", headers=H(tpo), json={"decision": "approve"})
+            check(c.get(f"/api/drives/{wrong['id']}", headers=H(stu)).json()["eligible"], "after the placement cell confirms, the student is eligible")
+            db.change_requests.delete_many({"drive_id": wrong["id"]})
+
+            # ---- junior batch: only interview experiences --------------------------------------
+            db.users.update_one({"email": "student@campusconnect.dev"}, {"$set": {"profile.grad_year": SEASON + 1}})
+            me = c.get("/api/auth/me", headers=H(stu)).json()
+            check(me["junior"] is True and me["season_batch"] == SEASON, f"a {SEASON + 1} student is marked junior")
+            blocked = [p for p in ("/api/drives", "/api/students/me/dashboard", "/api/students/me/analytics", "/api/announcements",
+                                   "/api/issues", f"/api/drives/{d['id']}") if c.get(p, headers=H(stu)).status_code != 403]
+            check(not blocked, f"junior can't see drives, results, insights or notices {blocked or ''}")
+            check(c.get("/api/experiences", headers=H(stu)).status_code == 200 and c.get("/api/experiences/companies", headers=H(stu)).status_code == 200,
+                  "junior can read interview experiences")
+            check(c.post("/api/experiences", headers=H(stu), json={"company": "X", "role": "Y", "round_type": "Other", "difficulty": 3,
+                                                                    "outcome": "awaiting"}).status_code == 403, "junior can't post experiences")
+            check(c.put("/api/students/me/name", headers=H(stu), json={"first_name": "Demo", "last_name": "Student"}).status_code == 200,
+                  "junior can still manage their own profile")
+            r = c.post("/api/announcements", headers=H(tpo), json={"title": "Season notice test", "body": "Only for this season.", "audience": "all"}).json()
+            check(str(stu_doc["_id"]) not in (db.announcements.find_one({"_id": ObjectId(r["id"])}) or {}).get("recipient_ids", []),
+                  "notices to all students skip the junior batch")
+            db.announcements.delete_one({"_id": ObjectId(r["id"])})
+            db.users.update_one({"email": "student@campusconnect.dev"}, {"$set": {"profile.grad_year": SEASON}})
+            check(c.get("/api/drives", headers=H(stu)).status_code == 200, f"a {SEASON} student sees drives again")
+
             # ---- bulk approval: everyone except --------------------------------------------
             for i in range(4):
                 temp_students.append(db.users.insert_one({
                     "name": f"Bulk Student {i}", "email": f"bulk{i}@student.wit.edu.in", "role": "student", "status": "pending",
                     "college_id": college_id, "roll_number": f"BULK{i}", "password_hash": hash_password("password123"),
-                    "profile": {"branch": "IT", "grad_year": 2026}, "created_at": fixtures.started()}).inserted_id)
+                    "profile": {"branch": "IT", "grad_year": SEASON}, "created_at": fixtures.started()}).inserted_id)
             ids = [str(x) for x in temp_students]
             r = c.post("/api/college/students/bulk-decision", headers=H(tpo), json={"approve": ids[:3]}).json()
             check(r == {"approved": 3, "rejected": 0, "skipped": 0}, "approve everyone except one")

@@ -95,6 +95,11 @@ const NAV = {
     { to: "/approvals/colleges", label: "College approvals", icon: Landmark },
     { to: "/approvals/companies", label: "Company approvals", icon: Building2 },
   ],
+  // junior-batch students: only interview experiences until their placement season starts
+  junior: [
+    { to: "/experiences", label: "Experiences", icon: MessageSquareQuote },
+    { to: "/profile", label: "Profile", icon: User },
+  ],
 };
 const ROLE_LABEL = { student: "Student", recruiter: "Company", coordinator: "Placement cell", admin: "Admin" };
 
@@ -105,7 +110,7 @@ export default function Layout() {
   const hasOwnItem = (to) => to === "/drives" && pathname === "/drives/new";
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const items = NAV[user.role] || [];
+  const items = (user.junior ? NAV.junior : NAV[user.role]) || [];
 
   const logout = () => { signOut(); navigate("/"); };
 

@@ -38,6 +38,8 @@ function Root() {
   if (loading) return <Spinner />;
   if (!user) return pathname === "/" ? <Landing /> : <Navigate to="/login" replace />;
   if (user.status && user.status !== "active") return <Pending />;
+  // junior batch: only interview experiences (and their own profile) until their season starts
+  if (user.junior && !/^\/(experiences|profile)(\/|$)/.test(pathname)) return <Navigate to="/experiences" replace />;
   return <Layout />;
 }
 

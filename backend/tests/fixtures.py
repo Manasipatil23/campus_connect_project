@@ -5,6 +5,9 @@ from datetime import datetime, timezone
 from bson import ObjectId
 
 from app.auth import hash_password
+from app.schemas import season_batch
+
+SEASON = season_batch()  # the batch being placed this season
 
 DEMO = ["student@campusconnect.dev", "tpo@campusconnect.dev", "recruiter@campusconnect.dev"]
 
@@ -32,7 +35,7 @@ def ensure_connection(db, college_id: str, company_id: str):
 def prepare_student(c, token: str):
     """Give the demo student a complete profile and a resume so they can apply."""
     h = {"Authorization": f"Bearer {token}"}
-    r = c.put("/api/students/me/profile", headers=h, json={"branch": "Computer", "cgpa": 8.1, "backlogs": 0, "grad_year": 2026,
+    r = c.put("/api/students/me/profile", headers=h, json={"branch": "Computer", "cgpa": 8.1, "backlogs": 0, "grad_year": SEASON,
                                                             "internships": 1, "projects": 2, "certifications": 1,
                                                             "skills": ["python", "sql", "power bi"]})
     assert r.status_code == 200, r.text
@@ -65,5 +68,5 @@ def reset(db, since: datetime, connections=(), companies=()):
     db.notifications.delete_many({"user_id": {"$in": demo_ids}, "created_at": {"$gte": since}})
     db.updates.delete_many({"at": {"$gte": since}})
     db.users.update_one({"email": "student@campusconnect.dev"}, {
-        "$set": {"profile": {"branch": "Computer", "grad_year": 2026}, "placement": {"status": "unplaced"}},
+        "$set": {"profile": {"branch": "Computer", "grad_year": SEASON}, "placement": {"status": "unplaced"}},
         "$unset": {"resume": ""}})

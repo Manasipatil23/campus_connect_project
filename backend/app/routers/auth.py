@@ -12,12 +12,12 @@ from bson.errors import InvalidId
 from fastapi import APIRouter, Depends, HTTPException
 from pymongo.errors import DuplicateKeyError
 
-from ..auth import create_token, current_user, hash_password, is_allowed_admin, verify_password
+from ..auth import create_token, current_user, hash_password, is_allowed_admin, is_junior, verify_password
 from ..db import db, serialize
 from ..config import ALLOW_PERSONAL_EMAIL
 from ..emailing import FREE_PROVIDERS, check_email, consume_code, domain_of, issue_code
 from ..workflow import admins, college_staff, notify
-from ..schemas import AdminCodeIn, batch_error, open_batches, AdminSetupIn, CollegeSignupIn, CompanySignupIn, LoginIn, SendCodeIn, StudentSignupIn
+from ..schemas import AdminCodeIn, batch_error, open_batches, season_batch, AdminSetupIn, CollegeSignupIn, CompanySignupIn, LoginIn, SendCodeIn, StudentSignupIn
 
 router = APIRouter(prefix="/api", tags=["auth"])
 PUBLIC_COLLEGE_FIELDS = {"name": 1, "short": 1, "city": 1, "state": 1, "tier": 1, "student_email_domain": 1}
@@ -32,6 +32,9 @@ def _oid(v):
 
 async def with_org(user: dict) -> dict:
     """Attach the user's college / company (and its approval status)."""
+    if user.get("role") == "student":
+        user["season_batch"] = season_batch()
+        user["junior"] = is_junior(user)   # junior batch: only interview experiences are open
     if user.get("college_id"):
         c = await db.colleges.find_one({"_id": ObjectId(user["college_id"])})
         if c:

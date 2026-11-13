@@ -7,6 +7,7 @@ import { api, downloadFile } from "../api";
 import { AtsBreakdown, Review } from "../components/AtsBreakdown";
 import { Badge, ErrorNote, Modal, Spinner, fmtDate, useApi } from "../components/ui";
 import { ChangeLine, ContactList, DriveFlow, HistoryPanel, StudentRound } from "../components/workflow";
+import { SeasonBatch } from "../components/forms";
 
 const FIELD_LABEL = { description: "Job description", ctc_lpa: "CTC (LPA)", location: "Location", deadline: "Deadline", criteria: "Eligibility", required_skills: "Required skills", preferred_skills: "Preferred skills", role: "Role", tier: "Tier" };
 const ROUND_KINDS = ["Online assessment", "Group discussion", "Technical interview", "HR interview", "Other"];
@@ -183,6 +184,7 @@ function EditDrive({ d, onDone }) {
         <div><label className="label">Min CGPA</label><input type="number" step="0.1" className="input" value={f.min_cgpa} onChange={set("min_cgpa")} /></div>
         <div><label className="label">Max backlogs</label><input type="number" className="input" value={f.max_backlogs} onChange={set("max_backlogs")} /></div>
       </div>
+      <div><div className="label">Graduating batch</div><SeasonBatch /></div>
       <div><label className="label">Job description</label><textarea className="input h-28" value={f.description} onChange={set("description")} /></div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div><label className="label">Required skills</label><input className="input" value={f.required} onChange={set("required")} /></div>

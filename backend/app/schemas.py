@@ -95,11 +95,17 @@ def _normalise_url(value: Optional[str], site: Optional[str] = None) -> Optional
     return v
 
 
+def season_batch(today: Optional[date] = None) -> int:
+    """The batch being placed right now. A placement season runs June to May: from June 2026 to
+    May 2027 it is the 2027 batch (the 2026 batch graduated in May 2026)."""
+    t = today or date.today()
+    return t.year + 1 if t.month >= 6 else t.year
+
+
 def open_batches(today: Optional[date] = None) -> List[int]:
-    """Graduation years that may sign up: the batch in this year's placement season (graduating next
-    year) and the batch just junior to it. In 2026 that's 2027 and 2028; in 2027, 2028 and 2029."""
-    y = (today or date.today()).year
-    return [y + 1, y + 2]
+    """Graduation years that may sign up: this season's batch and the one just junior to it."""
+    s = season_batch(today)
+    return [s, s + 1]
 
 
 def batch_error(year: int) -> Optional[str]:

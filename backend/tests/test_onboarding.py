@@ -18,6 +18,7 @@ from app.auth import hash_password
 from app.config import DB_NAME, MONGO_URL
 from app.db import client_options
 from app.main import app
+from app.schemas import season_batch
 from tests import fixtures
 
 
@@ -75,12 +76,12 @@ def run():
             sc = c.post("/api/auth/send-code", json={"email": "riya@student.testinst.edu.in", "kind": "student", "college_id": col_id}).json()["dev_code"]
             student = dict(first_name="Riya", last_name="Test", email="riya@student.testinst.edu.in", code=sc, password="password123",
                            college_id=col_id, roll_number="22ce001", branch="Computer", phone="9820022222")
-            this_year = date.today().year
+            season = season_batch()   # the batch being placed this season (June to May)
             check(c.get("/api/grad-years"), 200, "batches open today")
-            assert c.get("/api/grad-years").json()["years"] == [this_year + 1, this_year + 2]
-            check(c.post("/api/auth/register/student", json={**student, "grad_year": this_year}), 400, "student: this year's graduates can't sign up")
-            check(c.post("/api/auth/register/student", json={**student, "grad_year": this_year + 3}), 400, "student: batches too far ahead can't sign up")
-            r = check(c.post("/api/auth/register/student", json={**student, "grad_year": this_year + 2}), 200, "student: junior batch registered")
+            assert c.get("/api/grad-years").json()["years"] == [season, season + 1]
+            check(c.post("/api/auth/register/student", json={**student, "grad_year": season - 1}), 400, "student: last season's graduates can't sign up")
+            check(c.post("/api/auth/register/student", json={**student, "grad_year": season + 2}), 400, "student: batches too far ahead can't sign up")
+            r = check(c.post("/api/auth/register/student", json={**student, "grad_year": season}), 200, "student: this season's batch registered")
             st = r["token"]
             check(c.get("/api/drives", headers=H(st)), 403, "student: pending locked out")
             sid = c.get("/api/college/students", headers=H(tpo)).json()[0]["id"]

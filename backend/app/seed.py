@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 
 from .auth import hash_password
 from .config import ADMIN_EMAILS
+from .schemas import season_batch
 from .db import db, ensure_indexes
 
 NOW = datetime.now(timezone.utc)
@@ -59,7 +60,7 @@ async def ensure_demo_accounts() -> None:
         {"email": "student@campusconnect.dev", "name": "Demo Student", "first_name": "Demo", "last_name": "Student",
          "role": "student", "password": "student123", "college_id": college_id, "roll_number": "22CE100",
          "phone": "9820022222", "email_verified": True, "reviewed_at": NOW,
-         "profile": {"branch": "Computer", "grad_year": 2026}, "placement": {"status": "unplaced"}},
+         "profile": {"branch": "Computer", "grad_year": season_batch()}, "placement": {"status": "unplaced"}},
     ]
     for u in users:
         if await db.users.find_one({"email": u["email"]}):
@@ -91,7 +92,7 @@ async def wipe_everything_but_demo() -> None:
     await db.colleges.update_many({}, {"$unset": {"enrolment": "", "about": "", "placement_email": ""}})
     await db.companies.update_many({}, {"$unset": {"careers_email": ""}})
     await db.users.update_one({"email": "student@campusconnect.dev"}, {
-        "$set": {"profile": {"branch": "Computer", "grad_year": 2026}, "placement": {"status": "unplaced"}},
+        "$set": {"profile": {"branch": "Computer", "grad_year": season_batch()}, "placement": {"status": "unplaced"}},
         "$unset": {"resume": "", "last_reminded_at": "", "last_seen_at": "", "last_login_at": "", "login_count": ""}})
 
 

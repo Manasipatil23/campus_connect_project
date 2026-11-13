@@ -28,7 +28,8 @@ def check_eligibility(student: dict, drive: dict) -> Tuple[bool, List[str]]:
 
     years = crit.get("grad_years") or []
     if years and profile.get("grad_year") not in years:
-        reasons.append(f"Graduation year {profile.get('grad_year')} not in {years}")
+        batches = " and ".join(map(str, sorted(years)))
+        reasons.append(f"This drive is for the {batches} batch{'es' if len(years) > 1 else ''}; you graduate in {profile.get('grad_year')}")
 
     if student.get("placement", {}).get("status") == "placed" and drive.get("tier") != "dream":
         reasons.append("Already placed — only dream-tier drives are open")

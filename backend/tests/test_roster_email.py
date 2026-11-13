@@ -21,6 +21,9 @@ from app.config import DB_NAME, MONGO_URL
 from app.db import client_options
 from app.main import app
 from tests import fixtures
+from app.schemas import season_batch
+
+SEASON = season_batch()  # the batch being placed this season
 
 H = lambda t: {"Authorization": f"Bearer {t}"}
 SENT = []   # (kind, recipients, subject, reply_to)
@@ -82,7 +85,7 @@ def run():
                 temp.append(db.users.insert_one({
                     "name": name, "email": f"roster{i}@student.wit.edu.in", "role": "student", "status": "pending",
                     "college_id": college_id, "roll_number": roll, "password_hash": hash_password("password123"),
-                    "profile": {"branch": "Computer", "grad_year": 2026}, "created_at": fixtures.started()}).inserted_id)
+                    "profile": {"branch": "Computer", "grad_year": SEASON}, "created_at": fixtures.started()}).inserted_id)
             ids = {name: str(temp[i]) for i, (name, _) in enumerate(people)}
             upload = lambda name, data, tok=tpo: c.post("/api/college/students/roster-match", headers=H(tok), files={"file": (name, data)})
 

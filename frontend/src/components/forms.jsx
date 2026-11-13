@@ -222,9 +222,25 @@ export function PasswordFields({ pw, setPw, confirm, setConfirm }) {
   );
 }
 
-/** Graduating batches students may sign up with (from the server; same rule as a fallback):
- *  next year and the year after, e.g. 2027 and 2028 during 2026. */
+/** The batch being placed this season: a season runs June to May, so from June 2026 to May 2027
+ *  it is the 2027 batch. (The server uses the same rule; this is only the fallback.) */
+export function seasonBatch(now = new Date()) {
+  return now.getMonth() >= 5 ? now.getFullYear() + 1 : now.getFullYear();
+}
+
+/** Graduating batches students may sign up with: this season's batch and the one just junior to it. */
 export function openBatches() {
-  const y = new Date().getFullYear();
-  return [y + 1, y + 2];
+  const s = seasonBatch();
+  return [s, s + 1];
+}
+
+/** Drives are always for this season's batch; shown, not chosen. */
+export function SeasonBatch() {
+  const y = seasonBatch();
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="chip bg-brand-800 px-3 py-1.5 text-sm text-white">{y} batch</span>
+      <span className="text-xs text-ink-muted">This placement season (June {y - 1} to May {y}) is for the {y} batch only. Set automatically.</span>
+    </div>
+  );
 }

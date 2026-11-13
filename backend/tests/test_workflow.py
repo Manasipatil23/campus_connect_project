@@ -24,6 +24,9 @@ from app.config import DB_NAME, MONGO_URL
 from app.db import client_options
 from app.main import app
 from tests import fixtures
+from app.schemas import season_batch
+
+SEASON = season_batch()  # the batch being placed this season
 
 H = lambda t: {"Authorization": f"Bearer {t}"}
 
@@ -62,7 +65,7 @@ def run():
             assert "sql" in skills
             oa = (date.today() + timedelta(days=10)).isoformat()
             body = dict(company="x", role="WF Test Analyst", description=jd, ctc_lpa=7, college_id=college_id,
-                        required_skills=skills, criteria={"min_cgpa": 6.0, "grad_years": [2026]},
+                        required_skills=skills, criteria={"min_cgpa": 6.0, "grad_years": [SEASON]},
                         deadline=(date.today() + timedelta(days=5)).isoformat(),
                         rounds=[{"name": "Online assessment", "kind": "Online assessment", "date": oa, "time": "10:00"}])
             check(c.post("/api/drives", json={**body, "submit": True}, headers=H(rec)), 400, "can't submit without confirming criteria")

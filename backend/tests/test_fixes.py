@@ -21,6 +21,9 @@ from app.db import client_options
 from app.main import app
 from app.schemas import open_batches
 from tests import fixtures
+from app.schemas import season_batch
+
+SEASON = season_batch()  # the batch being placed this season
 
 H = lambda t: {"Authorization": f"Bearer {t}"}
 
@@ -53,7 +56,7 @@ def run():
                     "company": "x", "role": role, "description": "SQL, Python and Power BI analyst role for the fixes test.",
                     "ctc_lpa": ctc, "college_id": college_id, "required_skills": ["sql", "python"], "criteria_confirmed": True,
                     "submit": True, "deadline": (date.today() + timedelta(days=5)).isoformat(),
-                    "criteria": {"min_cgpa": 6, "branches": branches, "grad_years": [2026]}}).json()
+                    "criteria": {"min_cgpa": 6, "branches": branches, "grad_years": [SEASON]}}).json()
                 drives.append(d["id"])
                 c.post(f"/api/drives/{d['id']}/review", headers=H(tpo), json={"decision": "approve"})
                 c.post(f"/api/drives/{d['id']}/publish", headers=H(tpo))
@@ -65,7 +68,7 @@ def run():
             # 1. analytics counts approved students only
             pending = db.users.insert_one({"name": "Pending Student", "email": "pending.fix@example.dev", "role": "student",
                                            "status": "pending", "college_id": college_id, "password_hash": hash_password("x" * 8),
-                                           "profile": {"branch": "IT", "grad_year": 2026}}).inserted_id
+                                           "profile": {"branch": "IT", "grad_year": SEASON}}).inserted_id
             extra_users.append(pending)
             k = c.get("/api/analytics/overview", headers=H(tpo)).json()["kpis"]
             stats = c.get("/api/college/student-stats", headers=H(tpo)).json()["totals"]
