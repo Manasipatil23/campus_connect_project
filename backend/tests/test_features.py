@@ -65,6 +65,7 @@ def make_pdf(text: str) -> bytes:
 
 def run():
     db = MongoClient(MONGO_URL, **client_options(MONGO_URL))[DB_NAME]
+    fixtures.season_student(db)
     since, drive_ids, temp_students = fixtures.started(), [], []
     stu_doc = db.users.find_one({"email": "student@campusconnect.dev"})
     try:

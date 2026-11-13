@@ -48,10 +48,12 @@ function Screening({ app, canHire, onSaved }) {
         <p className="mb-3 text-xs text-ink-muted">AI suggestions. Correct any level that's wrong. “Not demonstrated” means the resume doesn't show it — not that the candidate lacks the skill.</p>
         <ul className="divide-y divide-black/[.05] rounded-xl border border-black/[.06]">
           {data.criteria.map((c) => (
-            <li key={c.kind + c.skill} className="grid gap-2 p-3 sm:grid-cols-[10rem_1fr_auto] sm:items-start">
-              <div className="text-sm font-medium">{c.skill} <span className="text-xs font-normal text-ink-muted">{c.kind}</span></div>
-              <div className="text-xs text-ink-muted">{c.evidence.length ? c.evidence.map((e, i) => <div key={i} className="truncate">“{e}”</div>) : "No mention in the resume"}</div>
-              <select disabled={!canHire} className={`rounded-full border-0 px-3 py-1 text-xs font-medium ${LEVEL[levelOf(c)][1]}`} value={levelOf(c)}
+            <li key={c.kind + c.skill} className="grid gap-2 p-3 sm:grid-cols-[9rem_minmax(0,1fr)_auto] sm:items-start sm:gap-4">
+              <div className="min-w-0 text-sm font-medium [overflow-wrap:anywhere]">{c.skill} <span className="block text-xs font-normal text-ink-muted">{c.kind}</span></div>
+              <div className="min-w-0 space-y-1 text-xs leading-relaxed text-ink-muted">{c.evidence.length ? c.evidence.map((e, i) => (
+                <div key={i} title={e.trim()} className="line-clamp-2 [overflow-wrap:anywhere]">“{e.trim()}”</div>
+              )) : "No mention in the resume"}</div>
+              <select disabled={!canHire} className={`w-fit shrink-0 justify-self-start rounded-full border-0 px-3 py-1 text-xs font-medium sm:justify-self-end ${LEVEL[levelOf(c)][1]}`} value={levelOf(c)}
                 onChange={(e) => setOver({ ...overrides, [c.skill]: e.target.value })}>
                 {Object.entries(LEVEL).map(([k, [l]]) => <option key={k} value={k}>{l}{k === c.ai_level ? " (AI)" : ""}</option>)}
               </select>

@@ -90,8 +90,36 @@ function Compare({ label, you, median, min, unit, max }) {
   );
 }
 
+/** "Why" list shared by both rounds, plus the company's own reason when they gave one. */
+function WhyList({ ins, title = "Why you weren't selected" }) {
+  return (
+    <div className="card p-6">
+      <h3 className="mb-4 font-medium">{title}</h3>
+      {ins.company_reason && (
+        <div className="mb-4 rounded-xl bg-rose-50/70 px-4 py-3 text-sm text-rose-900"><span className="font-medium">The company's reason: </span>{ins.company_reason}</div>
+      )}
+      <ul className="divide-y divide-black/[.05]">
+        {ins.reasons.map((r, i) => (
+          <li key={i} className="flex gap-4 py-3.5 first:pt-0 last:pb-0">
+            <span className={`chip h-fit w-16 shrink-0 justify-center capitalize ${WEIGHT[r.weight]}`}>{r.weight}</span>
+            <div><div className="text-sm font-medium">{r.title}</div><div className="mt-0.5 text-sm text-ink-muted">{r.detail}</div></div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ResumeInsights({ ins }) {
   if (!ins.available) return <div className="card p-6 text-sm text-ink-muted">{ins.reason}</div>;
+  if (ins.brief) return (
+    <section className="space-y-6">
+      <div><div className="eyebrow">Resume screening</div><h2 className="mt-3 text-2xl font-medium tracking-tight">{ins.headline}</h2></div>
+      {!ins.cleared && <WhyList ins={ins} />}
+      {ins.strengths?.length > 0 && <p className="text-sm text-ink-muted"><span className="font-medium text-ink">Working for you: </span>your resume showed {ins.strengths.join(", ")}, which the job requires.</p>}
+      {!ins.cleared && <Suggestions items={ins.suggestions?.items} source={ins.suggestions?.source} />}
+    </section>
+  );
   const maxOf = { "/100": 100, "%": 100 };
   return (
     <section className="space-y-6">
@@ -101,6 +129,7 @@ function ResumeInsights({ ins }) {
         <div className="mt-2"><PrivacyNote n={ins.cohort_size} what="were shortlisted" /></div>
       </div>
 
+      {!ins.cleared && ins.company_reason && <div className="rounded-xl bg-rose-50/70 px-4 py-3 text-sm text-rose-900"><span className="font-medium">The company's reason: </span>{ins.company_reason}</div>}
       {!ins.cleared && ins.reasons.length > 0 && (
         <div className="card p-6">
           <h3 className="mb-4 font-medium">Likely reasons</h3>
@@ -157,6 +186,35 @@ function ResumeInsights({ ins }) {
 
 function AssessmentInsights({ ins }) {
   if (!ins.available) return <div className="card p-6 text-sm text-ink-muted">{ins.reason}</div>;
+  if (ins.brief) return (
+    <section className="space-y-6">
+      <div><div className="eyebrow">Online assessment</div><h2 className="mt-3 text-2xl font-medium tracking-tight">{ins.headline}</h2></div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="card p-5"><div className="text-xs text-ink-muted">Your overall</div><div className="mt-2 text-3xl font-medium tabular-nums">{ins.total}%</div></div>
+        <div className="card p-5"><div className="text-xs text-ink-muted">{ins.cleared ? "To clear this round" : "Cut-off"}</div>
+          <div className="mt-2 text-3xl font-medium tabular-nums">{ins.cutoff_estimate != null ? `${ins.cutoff_estimate}%+` : "—"}</div>
+          <div className="text-xs text-ink-muted">{ins.cutoff_estimate != null ? "Overall score of those who cleared, rounded down" : "Nobody cleared this round"}</div></div>
+      </div>
+      {!ins.cleared && ins.reasons?.length > 0 && <WhyList ins={ins} />}
+      <div className="card p-6">
+        <h3 className="font-medium">Section by section</h3>
+        <ul className="mt-4 space-y-4">
+          {ins.sections.map((x) => (
+            <li key={x.section}>
+              <div className="flex justify-between text-sm"><span>{x.section}</span>
+                <span className="tabular-nums"><b className="font-medium">{x.you}%</b>{x.cleared_band != null && <span className="text-ink-muted"> · cleared at {x.cleared_band}%+</span>}</span></div>
+              <div className="relative mt-1.5 h-2 rounded-full bg-black/[.05]">
+                <div className={`h-2 rounded-full ${x.cleared_band != null && x.you < x.cleared_band ? "bg-rose-400" : "bg-emerald-400"}`} style={{ width: `${Math.min(100, x.you)}%` }} />
+                {x.cleared_band != null && <span className="absolute -top-1 h-4 w-0.5 bg-ink" style={{ left: `${Math.min(100, x.cleared_band)}%` }} title={`Cleared at ${x.cleared_band}%+`} />}
+              </div>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-4 text-xs text-ink-muted">Bar: your score. Black line: what those who cleared scored at least, rounded down to protect their privacy.</p>
+      </div>
+      {!ins.cleared && <Suggestions items={ins.suggestions} />}
+    </section>
+  );
   return (
     <section className="space-y-6">
       <div>
@@ -252,7 +310,7 @@ export default function ApplicationDetail() {
           <div>
             <div className="eyebrow">{drive.company}</div>
             <h1 className="mt-4 text-3xl font-medium tracking-[-0.03em] sm:text-4xl">{drive.role}</h1>
-            <p className="mt-1 text-ink-muted">{drive.ctc_lpa} LPA · {drive.location} · applied {fmtDate(app.applied_at)}</p>
+            <p className="mt-1 text-ink-muted">{[`${drive.ctc_lpa} LPA`, drive.location, `applied ${fmtDate(app.applied_at)}`].filter(Boolean).join(" · ")}</p>
           </div>
           <div className="flex flex-col items-end gap-2">
             <Badge value={app.status} />

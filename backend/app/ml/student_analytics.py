@@ -92,8 +92,12 @@ def build(user: dict, apps: List[dict], drives: Dict[str, dict], peers: Dict[str
     sec = defaultdict(lambda: {"you": [], "cleared": []})
     for _, _, ins in assess_ins:
         for s in ins["sections"]:
+            # small groups only give a rounded cut-off; a round nobody cleared gives nothing to compare
+            cleared = s.get("cleared_median", s.get("cleared_band"))
+            if cleared is None:
+                continue
             sec[s["section"]]["you"].append(s["you"])
-            sec[s["section"]]["cleared"].append(s["cleared_median"])
+            sec[s["section"]]["cleared"].append(cleared)
     sections = [{"section": k, "you": round(statistics.mean(v["you"]), 1),
                  "cleared": round(statistics.mean(v["cleared"]), 1), "tests": len(v["you"]),
                  "gap": round(statistics.mean(v["cleared"]) - statistics.mean(v["you"]), 1)}

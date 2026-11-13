@@ -32,6 +32,7 @@ def check(cond, label):
 
 def run():
     db = MongoClient(MONGO_URL, **client_options(MONGO_URL))[DB_NAME]
+    fixtures.season_student(db)
     since, created_conn, temp_company, drive_id = fixtures.started(), None, None, None
     try:
         with TestClient(app) as c:

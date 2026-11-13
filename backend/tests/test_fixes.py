@@ -40,6 +40,7 @@ def notes(db, email, since):
 
 def run():
     db = MongoClient(MONGO_URL, **client_options(MONGO_URL))[DB_NAME]
+    fixtures.season_student(db)
     since, conn, drives, extra_users, other_college = fixtures.started(), None, [], [], None
     try:
         with TestClient(app) as c:

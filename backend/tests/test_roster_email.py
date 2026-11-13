@@ -67,6 +67,7 @@ def make_xlsx(rows) -> bytes:
 
 def run():
     db = MongoClient(MONGO_URL, **client_options(MONGO_URL))[DB_NAME]
+    fixtures.season_student(db)
     since, temp, conn = fixtures.started(), [], None
     capture()
     try:

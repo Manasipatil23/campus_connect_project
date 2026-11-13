@@ -252,7 +252,8 @@ async def application_detail(app_id: str, user: dict = Depends(student_only)):
         you_user = {**user, "profile": app.get("profile_snapshot") or user.get("profile", {})}
         ins = resume_insights(app, you_user, cohort, drive)
         ins["cleared"] = reached(app, "shortlisted")
-        ins["headline"] = headline("resume_screening", ins["cleared"])
+        ins["headline"] = ("Your resume was shortlisted." if ins.get("brief") and ins["cleared"]
+                           else headline("resume_screening", ins["cleared"]))
         if ins["cleared"]:
             ins["reasons"] = []  # reasons only make sense for a rejection
         if ins["available"] and not ins["cleared"]:
@@ -271,8 +272,16 @@ async def application_detail(app_id: str, user: dict = Depends(student_only)):
         ins = assessment_insights(app, assessed)
         ins["cleared"] = reached(app, "assessment_cleared")
         decided = ins["cleared"] or app.get("rejected_round") == "assessment"
-        ins["headline"] = headline("assessment", ins["cleared"]) if decided else "Scores recorded — results pending."
+        ins["headline"] = (("You cleared the assessment." if ins.get("brief") and ins["cleared"] else headline("assessment", ins["cleared"]))
+                           if decided else "Scores recorded — results pending.")
         insights["assessment"] = ins
+
+    # the company's reason when they turned the application down (e.g. "Below the assessment cut-off")
+    if app["status"] == "rejected":
+        why = next((h.get("reason") for h in reversed(app.get("history", [])) if h.get("status") == "rejected" and h.get("reason")), None)
+        target = "assessment" if app.get("rejected_round") == "assessment" else "resume" if app.get("rejected_round") == "resume_screening" else None
+        if why and target and insights.get(target):
+            insights[target]["company_reason"] = why
 
     # recruiter-approved explanations only - never private notes or scorecards
     review = app.get("screening_review") or {}

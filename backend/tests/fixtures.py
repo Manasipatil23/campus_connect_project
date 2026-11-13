@@ -19,6 +19,17 @@ Projects: Sales analytics in Python and pandas over 1M rows; React and FastAPI p
 Achievements: Smart India Hackathon finalist. Certifications: Google Data Analytics."""
 
 
+_saved = {}
+
+
+def season_student(db):
+    """Tests need the demo student in this season's batch (juniors only see experiences).
+    Remember their real batch so reset() can put it back."""
+    u = db.users.find_one({"email": "student@campusconnect.dev"}) or {}
+    _saved["grad_year"] = (u.get("profile") or {}).get("grad_year")
+    db.users.update_one({"email": "student@campusconnect.dev"}, {"$set": {"profile.grad_year": SEASON}})
+
+
 def started() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -67,6 +78,8 @@ def reset(db, since: datetime, connections=(), companies=()):
     demo_ids = [str(u["_id"]) for u in db.users.find({"email": {"$in": DEMO}}, {"_id": 1})]
     db.notifications.delete_many({"user_id": {"$in": demo_ids}, "created_at": {"$gte": since}})
     db.updates.delete_many({"at": {"$gte": since}})
+    current = ((db.users.find_one({"email": "student@campusconnect.dev"}) or {}).get("profile") or {}).get("grad_year")
     db.users.update_one({"email": "student@campusconnect.dev"}, {
-        "$set": {"profile": {"branch": "Computer", "grad_year": SEASON}, "placement": {"status": "unplaced"}},
+        "$set": {"profile": {"branch": "Computer", "grad_year": _saved.pop("grad_year", None) or current or SEASON},
+                 "placement": {"status": "unplaced"}},
         "$unset": {"resume": ""}})

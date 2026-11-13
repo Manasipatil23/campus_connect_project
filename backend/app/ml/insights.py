@@ -64,7 +64,7 @@ def _metric(label: str, you: float, cohort: List[float], unit: str = "", higher_
 def resume_insights(you_app: dict, you_user: dict, cleared: List[dict], drive: dict) -> dict:
     """`cleared` is a list of {"app":…, "profile":…} for students who were shortlisted."""
     if len(cleared) < MIN_COHORT:
-        return {"available": False, "reason": f"Fewer than {MIN_COHORT} students were shortlisted, so a comparison would not be anonymous."}
+        return _resume_brief(you_app, cleared, drive)
 
     ats = you_app["ats"]
     profile = you_user.get("profile", {})
@@ -151,12 +151,116 @@ def resume_insights(you_app: dict, you_user: dict, cleared: List[dict], drive: d
     }
 
 
+def _band(x: float) -> int:
+    """Round a cut-off down to the nearest 5 so a small group's exact scores aren't revealed."""
+    return int(x // 5 * 5)
+
+
+def _resume_brief(you_app: dict, cleared: List[dict], drive: dict) -> dict:
+    """Too few shortlisted resumes for statistics: explain the decision from the job's requirements and
+    what the shortlisted resumes showed, without revealing anyone's exact numbers."""
+    ats = you_app["ats"]
+    you_skills = set(ats["skills_found"]) | set(ats["matched_skills"])
+    required = [s for s in drive.get("required_skills", [])]
+    preferred = [s for s in drive.get("preferred_skills", [])]
+    missing_req = [s for s in required if s not in you_skills]
+    shown_by_them = set()
+    for c in cleared:
+        shown_by_them |= set(c["app"]["ats"]["skills_found"]) | set(c["app"]["ats"]["matched_skills"])
+    they_had = sorted(s for s in shown_by_them - you_skills if s not in missing_req)
+    reasons = []
+    for sk in missing_req[:4]:
+        reasons.append({"weight": "high", "title": f"No evidence of {sk}, a required skill",
+                        "detail": f"The job lists {sk} as required and your resume didn't show it being used."
+                                  + (" The shortlisted resumes did." if sk in shown_by_them else "")})
+    if cleared:
+        low = _band(min(c["app"]["ats"]["score"] for c in cleared))
+        if ats["score"] < low:
+            reasons.append({"weight": "high", "title": "Resume match was below the shortlisted resumes",
+                            "detail": f"Shortlisted resumes matched this job at {low}/100 or more; yours matched at {round(ats['score'])}/100."})
+    pref_gap = [s for s in they_had if s in preferred]
+    if pref_gap:
+        reasons.append({"weight": "medium", "title": f"Shortlisted resumes also showed {', '.join(pref_gap[:3])}",
+                        "detail": "These are listed as preferred for the job, and your resume didn't show them."})
+    other = [s for s in they_had if s not in preferred][:3]
+    if other:
+        reasons.append({"weight": "low", "title": f"Shortlisted resumes showed {', '.join(other)}",
+                        "detail": "Not required by the job, but they helped those resumes stand out."})
+    if ats.get("impact", 100) < 40:
+        reasons.append({"weight": "medium", "title": "Few measurable results in your bullets",
+                        "detail": "Lines like “cut report time by 40%” make a resume rank higher for the same skills."})
+    for sec in ats.get("sections_missing", [])[:2]:
+        reasons.append({"weight": "low", "title": f"Missing a “{SECTION_LABELS.get(sec, sec)}” section",
+                        "detail": "Screening tools look for standard headings like this."})
+    order = {"high": 0, "medium": 1, "low": 2}
+    reasons.sort(key=lambda r: order[r["weight"]])
+    if not reasons:
+        reasons.append({"weight": "medium", "title": "Other resumes were a closer fit this time",
+                        "detail": "Your resume covered the required skills; the company shortlisted a small number of closer matches."})
+    return {
+        "available": True, "brief": True, "cohort_size": len(cleared), "metrics": [], "skills": [], "sections": [],
+        "reasons": reasons[:7], "strengths": [s for s in required if s in you_skills][:6],
+        "gaps": {"skills": they_had, "required_skills": missing_req,
+                 "sections": [SECTION_LABELS.get(x, x) for x in ats.get("sections_missing", [])]},
+    }
+
+
+def _pct(x: float) -> str:
+    return f"{x:g}"   # 41.0 -> "41", 51.3 -> "51.3"
+
+
+def _assessment_brief(you: Dict[str, float], cleared: List[dict], you_cleared: bool = False) -> dict:
+    """Too few people cleared for statistics: give the (rounded) cut-off and the sections where the
+    student fell short, with what to practise."""
+    total = round(statistics.mean(you.values()), 1)
+    sections, reasons, suggestions = [], [], []
+    if you_cleared:
+        cut_total = _band(min(statistics.mean(a["assessment"]["sections"].values()) for a in cleared))
+        for name, score in you.items():
+            sections.append({"section": name, "you": score, "cleared_band": _band(min(a["assessment"]["sections"].get(name, 0) for a in cleared)), "gap": 0})
+        return {"available": True, "brief": True, "cohort_size": len(cleared), "total": total, "cutoff_estimate": cut_total,
+                "percentile": None, "sections": sections, "reasons": [], "suggestions": []}
+    if cleared:
+        cut_total = _band(min(statistics.mean(a["assessment"]["sections"].values()) for a in cleared))
+        if total < cut_total:
+            reasons.append({"weight": "high", "title": f"Overall score below the cut-off",
+                            "detail": f"Students who cleared scored {cut_total}% or more overall; you scored {_pct(total)}%."})
+        for name, score in you.items():
+            band = _band(min(a["assessment"]["sections"].get(name, 0) for a in cleared))
+            sections.append({"section": name, "you": score, "cleared_band": band, "gap": round(band - score, 1)})
+    else:
+        cut_total = None
+        best = max(you.values())
+        for name, score in you.items():
+            sections.append({"section": name, "you": score, "cleared_band": None, "gap": round(best - score, 1)})
+        reasons.append({"weight": "high", "title": "Nobody cleared this assessment",
+                        "detail": "The company didn't move anyone forward from this round, so the cut-off was above every score."})
+    for sec in sorted(sections, key=lambda x: -x["gap"]):
+        if sec["gap"] <= 0:
+            continue
+        topics = SECTION_TOPICS.get(sec["section"].lower(), [])
+        if sec["cleared_band"] is not None:
+            reasons.append({"weight": "high" if sec["gap"] >= 15 else "medium", "title": f"{sec['section']}: {_pct(sec['you'])}%",
+                            "detail": f"Students who cleared scored {sec['cleared_band']}% or more in {sec['section']}."})
+        suggestions.append({"title": f"Raise your {sec['section']} score",
+                            "detail": (f"You scored {_pct(sec['you'])}%" + (f"; those who cleared had {sec['cleared_band']}%+." if sec["cleared_band"] is not None else " (your weakest section).")
+                                       + (f" Practise: {', '.join(topics)}." if topics else ""))})
+    return {"available": True, "brief": True, "cohort_size": len(cleared), "total": total, "cutoff_estimate": cut_total,
+            "percentile": None, "sections": sections, "reasons": reasons[:6], "suggestions": suggestions[:4]}
+
+
 def rule_suggestions_resume(ins: dict) -> List[dict]:
     out = []
     for s in ins["gaps"]["required_skills"][:4]:
         out.append({"title": f"Show {s} on your resume",
                     "detail": SKILL_TIPS.get(s, f"If you know {s}, add a project or internship bullet that uses it. If not, a short course plus a mini-project is the quickest way to close this gap.")})
     by = {m["label"]: m for m in ins["metrics"]}
+    if ins.get("brief"):
+        for sk in ins["gaps"]["skills"][:2]:
+            out.append({"title": f"Show {sk} if you have it", "detail": SKILL_TIPS.get(sk, f"The shortlisted resumes showed {sk}. If you've used it, add a bullet that shows how.")})
+        out.append({"title": "Quantify your bullets",
+                    "detail": "Rewrite each project/internship bullet as action + tool + measurable result, e.g. “Cut report time 40% by automating SQL queries”."})
+        return out[:6]
     if by["Quantified impact"]["verdict"] != "at_or_above":
         out.append({"title": "Quantify your bullets",
                     "detail": "Rewrite each project/internship bullet as action + tool + measurable result, e.g. “Cut report time 40% by automating SQL queries”."})
@@ -177,7 +281,9 @@ def assessment_insights(you_app: dict, assessed: List[dict]) -> dict:
         return {"available": False, "reason": "No assessment score has been recorded for you on this drive yet."}
     cleared = [a for a in assessed if reached(a, "assessment_cleared") and a["_id"] != you_app["_id"]]
     if len(cleared) < MIN_COHORT:
-        return {"available": False, "reason": f"Fewer than {MIN_COHORT} students cleared the assessment, so a comparison would not be anonymous."}
+        you_cleared = reached(you_app, "assessment_cleared")
+        # the cut-off includes the student's own score when they cleared (it's their own data)
+        return _assessment_brief(you, cleared + ([you_app] if you_cleared else []), you_cleared)
 
     sections = []
     for name, score in you.items():
