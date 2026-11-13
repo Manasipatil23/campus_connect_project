@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, CircleHelp, ClipboardList, FileSearch, MessageSquare, Pause, Play, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, CircleHelp, ClipboardList, FileSearch, Filter, MessageSquare, Pause, Play, Star, XCircle } from "lucide-react";
 import { api } from "../api";
 import { Badge, Empty, ErrorNote, Modal, PageHeader, STATUS_LABELS, Spinner, Tabs, scoreColor, useApi, plural } from "../components/ui";
 
@@ -161,9 +161,117 @@ function ScoreForm({ app, sections, onSaved, onClose }) {
   );
 }
 
+const CUT_STAGES = {
+  resume: { label: "Resume screening", from: "applied", score: "resume match", verb: "Shortlist", next: "Resume shortlisted" },
+  assessment: { label: "Assessment", from: "shortlisted", score: "overall assessment score", verb: "Clear", next: "Cleared assessment" },
+  interview: { label: "Interview → offer", from: "assessment_cleared", score: "interview score", verb: "Offer", next: "Offered" },
+};
+const overall = (a) => (a.assessment?.sections ? Math.round(10 * Object.values(a.assessment.sections).reduce((x, y) => x + y, 0) / Object.values(a.assessment.sections).length) / 10 : null);
+
+/** Move everyone at or above a score to the next stage in one go, after a preview. */
+function CutoffPanel({ drive, applicants, onDone }) {
+  const firstStage = Object.keys(CUT_STAGES).find((k) => applicants.some((a) => a.status === CUT_STAGES[k].from)) || "resume";
+  const [stage, setStage] = useState(firstStage);
+  const [min, setMin] = useState(drive.cutoffs?.[firstStage] ?? 80);
+  const [rejectRest, setRejectRest] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [done, setDone] = useState(null);
+  const cfg = CUT_STAGES[stage];
+  const waiting = applicants.filter((a) => a.status === cfg.from).length;
+  const run = async (dry) => {
+    setErr(null); setBusy(true); if (dry) setDone(null);
+    try {
+      const r = await api(`/drives/${drive.id}/cutoff`, { method: "POST", body: { stage, min_score: Number(min), reject_rest: rejectRest, dry_run: dry } });
+      if (dry) setPreview(r); else { setPreview(null); setDone(r); onDone(); }
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const pick = (k) => { setStage(k); setMin(drive.cutoffs?.[k] ?? 80); setPreview(null); setDone(null); };
+  return (
+    <div className="card mb-4 p-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Filter className="h-4 w-4 text-brand-600" /><h2 className="font-medium">Move candidates on by score</h2>
+        <div className="ml-auto"><Tabs value={stage} onChange={pick} options={Object.entries(CUT_STAGES).map(([k, v]) => [k, v.label])} /></div>
+      </div>
+      <div className="mt-4 flex flex-wrap items-end gap-3 text-sm">
+        <div>
+          <label className="label">{cfg.verb} everyone with {cfg.score} of at least</label>
+          <div className="flex items-center gap-2">
+            {[70, 80, 90].map((v) => (
+              <button key={v} type="button" onClick={() => { setMin(v); setPreview(null); }}
+                className={`chip px-3 py-1.5 ${Number(min) === v ? "bg-brand-800 text-white" : "border border-black/10 bg-white text-ink-muted"}`}>{v}%</button>
+            ))}
+            <input type="number" min="0" max="100" step="1" className="input w-24 px-3 py-1.5" value={min} onChange={(e) => { setMin(e.target.value); setPreview(null); }} aria-label="Minimum score" />
+          </div>
+        </div>
+        <label className="flex items-center gap-2 pb-2 text-ink-soft"><input type="checkbox" className="accent-brand-700" checked={rejectRest} onChange={(e) => { setRejectRest(e.target.checked); setPreview(null); }} />Mark the rest as not selected</label>
+        <button className="btn-soft ml-auto" disabled={busy || !waiting || min === ""} onClick={() => run(true)}>{busy && !preview ? "Checking…" : "Preview"}</button>
+      </div>
+      <p className="mt-2 text-xs text-ink-muted">
+        {waiting ? `${plural(waiting, "candidate")} at this stage.` : "Nobody is at this stage right now."}
+        {stage === "interview" && " Record each candidate's interview score in the Scores column first."}
+        {drive.cutoffs?.[stage] != null && ` Last cut-off used: ${drive.cutoffs[stage]}%.`}
+      </p>
+      <ErrorNote>{err}</ErrorNote>
+      {done && <div className="mt-3 rounded-xl bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">{plural(done.pass, "candidate")} moved to {cfg.next}{rejectRest && done.below ? `, ${done.below} not selected` : ""}. Everyone affected was notified, and students see the {done.min_score}% cut-off as the reason.</div>}
+      {preview && (
+        <div className="mt-4 rounded-xl border border-black/[.06]">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 border-b border-black/[.06] px-4 py-3 text-sm">
+            <span className="font-medium text-emerald-700">{preview.pass} pass</span>
+            <span className={rejectRest ? "font-medium text-rose-600" : "text-ink-muted"}>{preview.below} below{rejectRest ? " (not selected)" : " (stay where they are)"}</span>
+            {preview.no_score > 0 && <span className="text-amber-700">{preview.no_score} without a score (left as they are)</span>}
+            {preview.on_hold > 0 && <span className="text-ink-muted">{preview.on_hold} on hold (left as they are)</span>}
+          </div>
+          <ul className="max-h-56 divide-y divide-black/[.04] overflow-y-auto text-sm">
+            {preview.rows.map((r) => (
+              <li key={r.id} className="flex items-center justify-between px-4 py-2">
+                <span className={r.group === "pass" ? "" : "text-ink-muted"}>{r.name}</span>
+                <span className="tabular-nums">{r.score == null ? "—" : `${r.score}%`}
+                  <span className={`ml-3 chip ${r.group === "pass" ? "bg-emerald-50 text-emerald-700" : r.group === "below" ? (rejectRest ? "bg-rose-50 text-rose-600" : "bg-black/[.04] text-ink-muted") : "bg-amber-50 text-amber-700"}`}>
+                    {r.group === "pass" ? cfg.next : r.group === "below" ? (rejectRest ? "Not selected" : "Stays") : r.group === "no_score" ? "No score" : "On hold"}</span></span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex justify-end gap-2 border-t border-black/[.06] px-4 py-3">
+            <button className="btn-ghost" onClick={() => setPreview(null)}>Cancel</button>
+            <button className="btn-primary" disabled={busy || (!preview.pass && !(rejectRest && preview.below))} onClick={() => run(false)}>
+              {busy ? "Applying…" : `Confirm: ${cfg.verb.toLowerCase()} ${preview.pass}${rejectRest && preview.below ? `, not select ${preview.below}` : ""}`}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InterviewScoreForm({ app, onSaved }) {
+  const [score, setScore] = useState(app.interview_score?.score ?? "");
+  const [note, setNote] = useState(app.interview_score?.note || "");
+  const [err, setErr] = useState(null);
+  const save = async (e) => {
+    e.preventDefault(); setErr(null);
+    try {
+      const r = await api(`/applications/${app.id}/interview-score`, { method: "PUT", body: { score: Number(score), note: note || null } });
+      onSaved(r.interview_score);
+    } catch (e2) { setErr(e2.message); }
+  };
+  return (
+    <form onSubmit={save} className="space-y-4">
+      <div><label className="label" htmlFor="iv-score">Overall interview score (%)</label>
+        <input id="iv-score" type="number" min="0" max="100" step="0.5" className="input" value={score} onChange={(e) => setScore(e.target.value)} required autoFocus /></div>
+      <div><label className="label" htmlFor="iv-note">Private note (optional, never shown to the student)</label>
+        <textarea id="iv-note" className="input h-20" maxLength={300} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Strong SQL; average on system design" /></div>
+      <ErrorNote>{err}</ErrorNote>
+      <div className="flex justify-end"><button className="btn-primary">Save score</button></div>
+    </form>
+  );
+}
+
 export default function Applicants() {
   const { id } = useParams();
-  const { data, error, setData } = useApi(`/drives/${id}/applicants`);
+  const { data, error, setData, reload } = useApi(`/drives/${id}/applicants`);
+  const [interviewing, setInterviewing] = useState(null);
   const [filter, setFilter] = useState("all");
   const [scoring, setScoring] = useState(null);
   const [panel, setPanel] = useState(null); // {app, kind: "screening" | "feedback"}
@@ -211,12 +319,13 @@ export default function Applicants() {
         <Tabs value={filter} onChange={setFilter}
           options={STAGES.map((s) => [s, s === "all" ? `All (${data.applicants.length})` : `${STATUS_LABELS[s]} (${count(s)})`])} />
       </div>
+      {canHire && data.applicants.length > 0 && <CutoffPanel drive={{ ...drive, id }} applicants={data.applicants} onDone={reload} />}
       <ErrorNote>{err}</ErrorNote>
       <div className="card mt-2 overflow-x-auto">
         {list.length === 0 ? <Empty>No applicants in this stage.</Empty> : (
           <table className="w-full min-w-[600px] text-sm [&_td]:px-3 [&_th]:px-3">
             <thead className="border-b border-black/[.06] text-left text-xs text-ink-muted">
-              <tr><th className="py-3 pl-6">#</th><th>Candidate</th><th className="text-right">Match</th><th>Assessment</th><th className="pr-6">Status &amp; next step</th></tr>
+              <tr><th className="py-3 pl-6">#</th><th>Candidate</th><th className="text-right">Match</th><th>Scores</th><th className="pr-6">Status &amp; next step</th></tr>
             </thead>
             <tbody className="divide-y divide-black/[.05]">
               {list.map((a) => (
@@ -234,7 +343,14 @@ export default function Applicants() {
                   </td>
                   <td className={`py-4 text-right font-medium tabular-nums ${scoreColor(a.ats_score)}`}>{a.ats_score}</td>
                   <td className="py-4 text-xs text-ink-muted">
-                    {a.assessment ? Object.entries(a.assessment.sections).map(([k, v]) => <div key={k}>{k}: <span className="text-ink">{v}%</span></div>) : !(canHire && a.status === "shortlisted") && "—"}
+                    {a.assessment && <div className="mb-0.5 font-medium text-ink">Overall {overall(a)}%</div>}
+                    {a.assessment ? Object.entries(a.assessment.sections).map(([k, v]) => <div key={k}>{k}: <span className="text-ink">{v}%</span></div>) : !(canHire && a.status === "shortlisted") && !a.interview_score && "—"}
+                    {a.interview_score && <div className="mt-1.5 font-medium text-ink" title={a.interview_score.note || ""}>Interview {a.interview_score.score}%</div>}
+                    {canHire && ["assessment_cleared", "offered"].includes(a.status) && (
+                      <button className="mt-1 inline-flex items-center gap-1 text-brand-700 hover:underline" onClick={() => setInterviewing(a)}>
+                        <Star className="h-3.5 w-3.5" /> {a.interview_score ? "Edit" : "Record"} interview score
+                      </button>
+                    )}
                     {canHire && a.status === "shortlisted" && (
                       <button className="mt-1 inline-flex items-center gap-1 text-brand-700 hover:underline" onClick={() => setScoring(a)}>
                         <ClipboardList className="h-3.5 w-3.5" /> {a.assessment ? "Edit" : "Record"} scores
@@ -272,6 +388,9 @@ export default function Applicants() {
         title={panel ? `${panel.kind === "screening" ? "Resume screening" : "Interview evaluation"} · ${panel.app.name}` : ""}>
         {panel?.kind === "screening" && <Screening app={panel.app} canHire={canHire} onSaved={() => patch(panel.app.id, { screening_shared: true })} />}
         {panel?.kind === "feedback" && <Feedback app={panel.app} canHire={canHire} />}
+      </Modal>
+      <Modal open={Boolean(interviewing)} onClose={() => setInterviewing(null)} title={interviewing ? `Interview score · ${interviewing.name}` : ""}>
+        {interviewing && <InterviewScoreForm app={interviewing} onSaved={(interview_score) => { patch(interviewing.id, { interview_score }); setInterviewing(null); }} />}
       </Modal>
       <Modal open={Boolean(scoring)} onClose={() => setScoring(null)} title={scoring ? `Assessment scores · ${scoring.name}` : ""}>
         {scoring && <ScoreForm app={scoring} sections={sections} onClose={() => setScoring(null)}

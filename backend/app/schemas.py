@@ -259,6 +259,18 @@ class ScreeningReviewIn(BaseModel):
     share_with_student: bool = False
 
 
+class InterviewScoreIn(BaseModel):
+    score: float = Field(ge=0, le=100)          # overall interview score, percent
+    note: Optional[str] = Field(default=None, max_length=300)   # private to the company
+
+
+class CutoffIn(BaseModel):
+    stage: Literal["resume", "assessment", "interview"]
+    min_score: float = Field(ge=0, le=100)
+    reject_rest: bool = False   # also mark everyone below the cut-off as not selected
+    dry_run: bool = False       # just show who would pass
+
+
 class AssessmentIn(BaseModel):
     # section name -> score in percent (0-100)
     sections: Dict[str, float]

@@ -26,7 +26,7 @@ from ..ml.ats import evidence_report, extract_skills, normalize_skill, score_res
 from ..ml.eligibility import check_eligibility, eligibility_rules
 from ..schemas import (FUNNEL, ROUND_AT_STATUS, STAGE_LABELS, TERMINAL, AssessmentIn, ChangeDecisionIn, DriveIn,
                        DrivePatch, DriveReviewIn, DriveStatusIn, FeedbackIn, HoldIn, JDIn, RoundIn, RoundPatch,
-                       ScreeningReviewIn, StatusIn, season_batch)
+                       ScreeningReviewIn, StatusIn, season_batch, CutoffIn, InterviewScoreIn)
 from ..workflow import (ACCEPTING, DRIVE_STATUS, FIELD_LABELS, LIVE, ROUND_STATUS, STUDENT_FACING_FIELDS,
                         STUDENT_VISIBLE, affected_students, college_staff, drive_applicants, drive_company_staff,
                         drive_label, eligible_students, log_update, notify, now, lpa, day)
@@ -892,6 +892,66 @@ async def record_assessment(app_id: str, body: AssessmentIn, user: dict = Depend
     assessment = {"sections": sections, "recorded_at": now()}
     await db.applications.update_one({"_id": app["_id"]}, {"$set": {"assessment": assessment}})
     return {"id": app_id, "assessment": assessment}
+
+
+@router.put("/applications/{app_id}/interview-score")
+async def record_interview_score(app_id: str, body: InterviewScoreIn, user: dict = Depends(managers)):
+    """The company's overall interview score for a candidate who cleared the assessment."""
+    app, drive = await _app_and_drive(app_id, user)
+    if app["status"] not in ("assessment_cleared", "offered", "accepted"):
+        raise HTTPException(400, "Interview scores are for candidates who cleared the assessment")
+    entry = {"score": round(body.score, 1), "note": (body.note or "").strip() or None, "by": user["name"], "at": now()}
+    await db.applications.update_one({"_id": app["_id"]}, {"$set": {"interview_score": entry}})
+    return {"id": app_id, "interview_score": entry}
+
+
+CUTOFF_STAGES = {
+    # stage: (candidates in this status, move them to, label, how to read their score)
+    "resume": ("applied", "shortlisted", "resume match",
+               lambda a: a.get("ats_score")),
+    "assessment": ("shortlisted", "assessment_cleared", "assessment",
+                   lambda a: round(sum(a["assessment"]["sections"].values()) / len(a["assessment"]["sections"]), 1)
+                   if (a.get("assessment") or {}).get("sections") else None),
+    "interview": ("assessment_cleared", "offered", "interview",
+                  lambda a: (a.get("interview_score") or {}).get("score")),
+}
+
+
+@router.post("/drives/{drive_id}/cutoff")
+async def apply_cutoff(drive_id: str, body: CutoffIn, user: dict = Depends(managers)):
+    """Move everyone in a round who scored at least `min_score` to the next stage in one go (and, if
+    asked, mark the rest as not selected). With `dry_run`, only report who would pass."""
+    drive = await get_drive(drive_id)
+    if not owns_hiring(user, drive):
+        raise HTTPException(403, "Hiring decisions on this drive belong to the company")
+    status, nxt, label, score_of = CUTOFF_STAGES[body.stage]
+    apps = await db.applications.find({"drive_id": drive_id, "status": status}).to_list(None)
+    names = {str(u["_id"]): u["name"] async for u in db.users.find(
+        {"_id": {"$in": [ObjectId(a["student_id"]) for a in apps]}}, {"name": 1})}
+    rows = []
+    for a in apps:
+        sc = score_of(a)
+        group = "on_hold" if a.get("on_hold") else "no_score" if sc is None else "pass" if sc >= body.min_score else "below"
+        rows.append({"id": str(a["_id"]), "name": names.get(a["student_id"], "Student"), "score": sc, "group": group})
+    rows.sort(key=lambda r: (r["score"] is None, -(r["score"] or 0)))
+    out = {"stage": body.stage, "min_score": body.min_score, "rows": rows,
+           "pass": sum(r["group"] == "pass" for r in rows), "below": sum(r["group"] == "below" for r in rows),
+           "no_score": sum(r["group"] == "no_score" for r in rows), "on_hold": sum(r["group"] == "on_hold" for r in rows)}
+    if body.dry_run:
+        return out
+    cut = f"{body.min_score:g}%"
+    for r in rows:
+        if r["group"] == "pass":
+            await update_status(r["id"], StatusIn(status=nxt, reason=f"Met the {label} cut-off ({cut})"), user)
+        elif r["group"] == "below" and body.reject_rest:
+            await update_status(r["id"], StatusIn(status="rejected", reason=f"Below the {label} cut-off ({cut})"), user)
+    await db.drives.update_one({"_id": drive["_id"]}, {"$set": {f"cutoffs.{body.stage}": body.min_score, "updated_at": now()}})
+    await log_update(entity="drive", entity_id=drive_id, drive_id=drive_id, college_id=drive["college_id"],
+                     company_id=drive.get("company_id"), action="cutoff", field=f"cutoff:{body.stage}", new=body.min_score,
+                     summary=f"{label.capitalize()} cut-off {cut}: {out['pass']} moved on"
+                             + (f", {out['below']} not selected" if body.reject_rest and out["below"] else ""), by=user)
+    out["applied"] = True
+    return out
 
 
 # ---- JD -> resume screening workspace -------------------------------------------------

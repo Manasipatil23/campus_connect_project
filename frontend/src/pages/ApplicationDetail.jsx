@@ -90,6 +90,22 @@ function Compare({ label, you, median, min, unit, max }) {
   );
 }
 
+/** Turned down after the interview: their score against the company's cut-off. */
+function InterviewResult({ ins }) {
+  return (
+    <section className="space-y-4">
+      <div><div className="eyebrow">Interview</div><h2 className="mt-3 text-2xl font-medium tracking-tight">{ins.headline}</h2></div>
+      <Story story={ins.story} />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="card p-5"><div className="text-xs text-ink-muted">Your interview score</div><div className="mt-2 text-3xl font-medium tabular-nums">{ins.score}%</div></div>
+        <div className="card p-5"><div className="text-xs text-ink-muted">Offers went to</div><div className="mt-2 text-3xl font-medium tabular-nums">{ins.cutoff != null ? `${ins.cutoff}%+` : "—"}</div>
+          <div className="text-xs text-ink-muted">{ins.cutoff != null ? "The company's interview cut-off" : "The company didn't use a score cut-off"}</div></div>
+      </div>
+      {ins.company_reason && <div className="rounded-xl bg-rose-50/70 px-4 py-3 text-sm text-rose-900"><span className="font-medium">The company's reason: </span>{ins.company_reason}</div>}
+    </section>
+  );
+}
+
 /** Turned down at a later round: how the resume compared with whoever went further (anonymous, rounded). */
 function VsSelected({ v }) {
   return (
@@ -242,7 +258,7 @@ function AssessmentInsights({ ins }) {
         <div className="card p-5"><div className="text-xs text-ink-muted">Your overall</div><div className="mt-2 text-3xl font-medium tabular-nums">{ins.total}%</div></div>
         <div className="card p-5"><div className="text-xs text-ink-muted">{ins.cleared ? "To clear this round" : "Cut-off"}</div>
           <div className="mt-2 text-3xl font-medium tabular-nums">{ins.cutoff_estimate != null ? `${ins.cutoff_estimate}%+` : "—"}</div>
-          <div className="text-xs text-ink-muted">{ins.cutoff_estimate != null ? "Overall score of those who cleared, rounded down" : "Nobody cleared this round"}</div></div>
+          <div className="text-xs text-ink-muted">{ins.cutoff_official ? "The company's cut-off" : ins.cutoff_estimate != null ? "Overall score of those who cleared, rounded down" : "Nobody cleared this round"}</div></div>
       </div>
       {!ins.cleared && <Story story={ins.story} />}
       {!ins.cleared && ins.reasons?.length > 0 && <WhyList ins={ins} />}
@@ -413,6 +429,7 @@ export default function ApplicationDetail() {
         </div>
       )}
       {insights.assessment && app.rejected_round === "assessment" && <AssessmentInsights ins={insights.assessment} />}
+      {insights.interview?.available && <InterviewResult ins={insights.interview} />}
       {insights.vs_selected?.available && <VsSelected v={insights.vs_selected} />}
       {insights.resume && !(insights.vs_selected?.available && insights.resume.cleared) && <ResumeInsights ins={insights.resume} />}
       {insights.assessment && app.rejected_round !== "assessment" && <AssessmentInsights ins={insights.assessment} />}

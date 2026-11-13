@@ -245,6 +245,8 @@ async def _decision_story(app: dict, user: dict, drive: dict, kind: str, ins: di
              "sections": [{"section": x["section"], "you": x["you"], "cleared_at_least": x.get("cleared_band", x.get("cleared_min"))}
                           for x in ins.get("sections", [])] if kind == "assessment" else None,
              "tips": ((ins.get("suggestions") or {}).get("items") if isinstance(ins.get("suggestions"), dict) else ins.get("suggestions") or [])[:3]}
+    if kind == "interview":
+        facts.update(your_interview_score_percent=ins.get("score"), interview_cut_off_percent=ins.get("cutoff"))
     if vs and vs.get("available"):
         facts["resume_vs_the_selected_candidate"] = {"differences": vs["reasons"], "skills_only_you_showed": vs["you_only"]}
     facts = {k: v for k, v in facts.items() if v not in (None, [], "")}
@@ -252,7 +254,7 @@ async def _decision_story(app: dict, user: dict, drive: dict, kind: str, ins: di
     saved = app.get("decision_story") or {}
     if saved.get("key") == key and saved.get("source") == "llm":
         return {k: saved[k] for k in ("explanation", "next_step", "source")}
-    round_name = "Online assessment" if kind == "assessment" else "Resume screening"
+    round_name = {"assessment": "Online assessment", "resume": "Resume screening", "interview": "Interview"}[kind]
     resume_text = app.get("resume_snapshot") or (user.get("resume") or {}).get("text", "")
     story = await run_in_threadpool(explain_decision, drive, round_name, facts, resume_text if kind == "resume" else "")
     if story["source"] == "llm":
@@ -303,10 +305,34 @@ async def application_detail(app_id: str, user: dict = Depends(student_only)):
                            if decided else "Scores recorded — results pending.")
         insights["assessment"] = ins
 
+    # the company's own cut-offs (set when they moved candidates on by score) replace any estimate
+    cutoffs = drive.get("cutoffs") or {}
+    a_ins = insights.get("assessment")
+    if a_ins and a_ins.get("available") and cutoffs.get("assessment") is not None:
+        cut = cutoffs["assessment"]
+        a_ins.update(cutoff_estimate=cut, cutoff_official=True)
+        for r in a_ins.get("reasons", []):
+            if r["title"] == "Overall score below the cut-off":
+                r["detail"] = f"The company's cut-off was {cut:g}% overall; you scored {a_ins['total']:g}%."
+        if not a_ins.get("cleared") and a_ins.get("total") is not None and a_ins["total"] < cut and not any(
+                r["title"] == "Overall score below the cut-off" for r in a_ins.get("reasons", [])):
+            a_ins.setdefault("reasons", []).insert(0, {"weight": "high", "title": "Overall score below the cut-off",
+                                                       "detail": f"The company's cut-off was {cut:g}% overall; you scored {a_ins['total']:g}%."})
+    r_ins = insights.get("resume")
+    if (r_ins and r_ins.get("available") and not r_ins.get("cleared") and cutoffs.get("resume") is not None
+            and app.get("ats_score", 100) < cutoffs["resume"]):
+        r_ins.setdefault("reasons", []).insert(0, {"weight": "high", "title": "Resume match below the company's cut-off",
+            "detail": f"The company shortlisted resumes matching this job at {cutoffs['resume']:g}% or more; yours matched at {app['ats_score']:g}%."})
+    # turned down after the interview: their own score against the company's cut-off
+    iv = (app.get("interview_score") or {}).get("score")
+    if app["status"] == "rejected" and app.get("rejected_round") == "interview" and iv is not None:
+        insights["interview"] = {"available": True, "score": iv, "cutoff": cutoffs.get("interview"),
+                                 "headline": "You didn't receive an offer after the interview."}
+
     # the company's reason when they turned the application down (e.g. "Below the assessment cut-off")
     if app["status"] == "rejected":
         why = next((h.get("reason") for h in reversed(app.get("history", [])) if h.get("status") == "rejected" and h.get("reason")), None)
-        target = "assessment" if app.get("rejected_round") == "assessment" else "resume" if app.get("rejected_round") == "resume_screening" else None
+        target = {"assessment": "assessment", "resume_screening": "resume", "interview": "interview"}.get(app.get("rejected_round"))
         if why and target and insights.get(target):
             insights[target]["company_reason"] = why
 
@@ -341,6 +367,7 @@ async def application_detail(app_id: str, user: dict = Depends(student_only)):
     drive_view["rounds"] = [student_round(r) for r in drive.get("rounds", [])]
     return {
         "application": {**serialize({k: v for k, v in app.items() if k not in hidden}),
+                        "interview_score": {"score": (app.get("interview_score") or {}).get("score")} if app.get("interview_score") else None,
                         "status_label": STAGE_LABELS[app["status"]]},
         "drive": drive_view,
         "timeline": _timeline(app, drive),
