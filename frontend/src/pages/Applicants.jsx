@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, CircleHelp, ClipboardList, FileSearch, Filter, MessageSquare, Pause, Play, Star, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, CircleHelp, ClipboardList, FileSearch, FileText, Filter, MessageSquare, Pause, Play, Star, XCircle } from "lucide-react";
 import { api } from "../api";
+import ResumeViewer from "../components/ResumeViewer";
 import { Badge, Empty, ErrorNote, Modal, PageHeader, STATUS_LABELS, Spinner, Tabs, scoreColor, useApi, plural } from "../components/ui";
 
 const NEXT = {
@@ -360,6 +361,8 @@ export default function Applicants() {
                   <td className="py-4">
                     <Badge value={a.status} />{a.on_hold && <div className="mt-1"><Badge value="on_hold" /></div>}
                     <div className="mt-2 flex gap-2 text-xs">
+                      <button className="inline-flex items-center gap-1 text-brand-700 hover:underline" onClick={() => setPanel({ app: a, kind: "resume" })}
+                        title={a.resume_file ? `${a.resume_file.name}, as submitted` : "Resume as submitted"}><FileText className="h-3.5 w-3.5" /> Resume</button>
                       <button className="inline-flex items-center gap-1 text-brand-700 hover:underline" onClick={() => setPanel({ app: a, kind: "screening" })}><FileSearch className="h-3.5 w-3.5" /> Screening</button>
                       <button className="inline-flex items-center gap-1 text-brand-700 hover:underline" onClick={() => setPanel({ app: a, kind: "feedback" })}><MessageSquare className="h-3.5 w-3.5" /> Feedback{a.feedback_count ? ` (${a.feedback_count})` : ""}</button>
                     </div>
@@ -385,7 +388,8 @@ export default function Applicants() {
         )}
       </div>
       <Modal open={Boolean(panel)} onClose={() => setPanel(null)} wide
-        title={panel ? `${panel.kind === "screening" ? "Resume screening" : "Interview evaluation"} · ${panel.app.name}` : ""}>
+        title={panel ? `${{ resume: "Resume", screening: "Resume screening", feedback: "Interview evaluation" }[panel.kind]} · ${panel.app.name}` : ""}>
+        {panel?.kind === "resume" && <ResumeViewer path={`/applications/${panel.app.id}/resume`} fallbackName={`${panel.app.name} resume`} />}
         {panel?.kind === "screening" && <Screening app={panel.app} canHire={canHire} onSaved={() => patch(panel.app.id, { screening_shared: true })} />}
         {panel?.kind === "feedback" && <Feedback app={panel.app} canHire={canHire} />}
       </Modal>

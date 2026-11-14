@@ -1,44 +1,22 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, ClipboardPaste, Download, Eye, UploadCloud } from "lucide-react";
-import { api, downloadFile, fileUrl } from "../api";
+import { ArrowRight, ClipboardPaste, Eye, UploadCloud } from "lucide-react";
+import { api } from "../api";
 import { useAuth } from "../auth";
 import { AtsBreakdown, Review } from "../components/AtsBreakdown";
+import ResumeViewer from "../components/ResumeViewer";
 import { Badge, ErrorNote, Modal, PageHeader, Spinner, Tabs, fmtDate, useApi } from "../components/ui";
 
-/** Shows the uploaded resume as a PDF, exactly as the student uploaded it. */
+/** Shows the uploaded resume in the format it was uploaded in (PDF or Word), as companies will see it. */
 function ResumePreview({ resume, open, onClose }) {
-  const file = resume.file;
-  const isPdf = file?.content_type === "application/pdf";
-  const [url, setUrl] = useState(null);
-  const [err, setErr] = useState(null);
-
-  useEffect(() => {
-    if (!open || !isPdf) return undefined;
-    let live = true, made = null;
-    setErr(null); setUrl(null);
-    fileUrl("/students/me/resume/file").then((u) => { made = u; if (live) setUrl(u); else URL.revokeObjectURL(u); })
-      .catch((e) => live && setErr(e.message));
-    return () => { live = false; if (made) URL.revokeObjectURL(made); };
-  }, [open, isPdf, file?.id]);
-
+  const viewable = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"].includes(resume.file?.content_type);
   return (
     <Modal open={open} onClose={onClose} title={`Preview · ${resume.filename}`} wide>
-      {isPdf && (
-        <div className="mb-3 flex justify-end">
-          <button className="btn-ghost px-3 py-1.5 text-xs" onClick={() => downloadFile("/students/me/resume/file", file.name).catch((e) => setErr(e.message))}>
-            <Download className="h-3.5 w-3.5" /> Download</button>
-        </div>
-      )}
-      <ErrorNote>{err}</ErrorNote>
-      {isPdf ? (
-        url ? <iframe src={url} title="Resume preview" className="h-[70vh] w-full rounded-xl border border-black/[.06] bg-white" />
-          : !err && <Spinner label="Opening your resume…" />
-      ) : (
+      {open && (viewable ? <ResumeViewer key={resume.file.id} path="/students/me/resume/file" fallbackName={resume.file.name} /> : (
         <div className="rounded-xl bg-black/[.03] p-6 text-center text-sm text-ink-muted">
-          The preview shows your resume as a PDF. Upload your resume as a PDF file to preview it here.
+          Upload your resume as a PDF or Word file to preview it here, exactly as companies will see it.
         </div>
-      )}
+      ))}
     </Modal>
   );
 }
@@ -161,8 +139,8 @@ export default function Resume() {
               className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-black/10 p-8 text-center hover:border-brand-500 hover:bg-brand-50/40">
               <UploadCloud className="h-8 w-8 text-brand-500" />
               <div className="mt-2 text-sm font-medium">Drop your resume or click to browse</div>
-              <div className="text-xs text-ink-muted">PDF or .txt, up to 5 MB</div>
-              <input ref={fileRef} type="file" accept=".pdf,.txt,.md" className="hidden" onChange={(e) => upload(e.target.files[0])} />
+              <div className="text-xs text-ink-muted">PDF or Word (.docx), up to 5 MB</div>
+              <input ref={fileRef} type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden" onChange={(e) => upload(e.target.files[0])} />
             </div>
           ) : (
             <div className="space-y-3">

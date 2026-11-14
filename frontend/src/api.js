@@ -32,17 +32,6 @@ export async function api(path, { method = "GET", body, form } = {}) {
   return data;
 }
 
-/** Fetch a file from an authenticated endpoint as a temporary object URL (revoke it when done). */
-export async function fileUrl(path) {
-  const token = getToken();
-  const res = await fetch(`/api${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.detail || `Couldn't load the file (${res.status})`);
-  }
-  return URL.createObjectURL(await res.blob());
-}
-
 /** Download a file from an authenticated endpoint and save it under its own name. */
 export async function downloadFile(path, fallbackName = "download") {
   const token = getToken();

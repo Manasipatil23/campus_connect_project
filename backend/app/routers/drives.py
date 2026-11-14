@@ -796,11 +796,19 @@ async def apply(drive_id: str, user: dict = Depends(require_role("student"))):
         "applied_at": t,
         "history": [{"status": "applied", "at": t, "by": "student"}],
     }
+    # the resume file as submitted (PDF / Word / text), so the company can read it in its own format
+    rf = await db.resume_files.find_one({"student_id": user["id"]})
+    if rf and (resume.get("file") or {}).get("id") == str(rf["_id"]):
+        doc["resume_file"] = {"name": rf["name"], "content_type": rf["content_type"], "size": rf["size"]}
     try:
         res = await db.applications.insert_one(doc)
     except DuplicateKeyError:
         raise HTTPException(409, "You have already applied to this drive")
     doc["_id"] = res.inserted_id
+    if doc.get("resume_file"):
+        await db.application_files.insert_one({"application_id": str(res.inserted_id), "student_id": user["id"],
+                                               "name": rf["name"], "content_type": rf["content_type"], "size": rf["size"],
+                                               "data": rf["data"], "created_at": t})
     who = f"{user['name']} ({(user.get('profile') or {}).get('branch') or 'student'})"
     await notify(await drive_company_staff(drive), f"New application · {drive['role']}", who,
                  f"/drives/{drive_id}/candidates", "application")
@@ -980,6 +988,24 @@ async def apply_cutoff(drive_id: str, body: CutoffIn, user: dict = Depends(manag
                              + (f", {out['below']} not selected" if body.reject_rest and out["below"] else ""), by=user)
     out["applied"] = True
     return out
+
+
+@router.get("/applications/{app_id}/resume")
+async def application_resume(app_id: str, user: dict = Depends(managers)):
+    """The resume exactly as the student submitted it with this application: their PDF or Word file,
+    or (pasted resumes and applications made before files were kept) the submitted text."""
+    app, drive = await _app_and_drive(app_id, user, hiring=False)
+    f = await db.application_files.find_one({"application_id": app_id})
+    if f:
+        safe = re.sub(r'[^A-Za-z0-9._ -]', "_", f["name"])
+        return Response(bytes(f["data"]), media_type=f["content_type"],
+                        headers={"Content-Disposition": f'inline; filename="{safe}"', "X-Resume-Kind": "file",
+                                 "Cache-Control": "no-store"})
+    text = app.get("resume_snapshot")
+    if not text:
+        raise HTTPException(404, "No resume was saved with this application")
+    return Response(text, media_type="text/plain; charset=utf-8",
+                    headers={"X-Resume-Kind": "text", "Cache-Control": "no-store"})
 
 
 # ---- JD -> resume screening workspace -------------------------------------------------

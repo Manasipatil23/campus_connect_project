@@ -78,6 +78,10 @@ def reset(db, since: datetime, connections=(), companies=()):
     demo_ids = [str(u["_id"]) for u in db.users.find({"email": {"$in": DEMO}}, {"_id": 1})]
     db.notifications.delete_many({"user_id": {"$in": demo_ids}, "created_at": {"$gte": since}})
     db.updates.delete_many({"at": {"$gte": since}})
+    # resume files kept with applications made during the run (their applications are removed with their drives)
+    db.application_files.delete_many({"created_at": {"$gte": since},
+                                      "application_id": {"$nin": [str(a["_id"]) for a in db.applications.find({}, {"_id": 1})]}})
+    db.resume_files.delete_many({"student_id": {"$in": demo_ids}, "created_at": {"$gte": since}})
     current = ((db.users.find_one({"email": "student@campusconnect.dev"}) or {}).get("profile") or {}).get("grad_year")
     db.users.update_one({"email": "student@campusconnect.dev"}, {
         "$set": {"profile": {"branch": "Computer", "grad_year": _saved.pop("grad_year", None) or current or SEASON},

@@ -109,10 +109,39 @@ def run():
             check("SECRET" not in str(a) and a["application"]["interview_score"] == {"score": 82}, "the private interview note never reaches the student")
             cut_saved = db.drives.find_one({"_id": ObjectId(drive_id)})["cutoffs"]
             check(cut_saved == {"resume": 80, "assessment": 70, "interview": 75}, "each cut-off is saved on the drive")
+
+            # ---- the company reads each resume in the format it was submitted in ------------------------
+            from tests.test_features import make_docx, make_pdf
+            email = "cutf@student.wit.edu.in"
+            uid = db.users.insert_one({"name": "Cut F", "email": email, "role": "student", "status": "active", "college_id": college_id,
+                                       "password_hash": hash_password("password123"), "profile": {"branch": "Computer", "grad_year": SEASON, "cgpa": 8},
+                                       "created_at": datetime.now(timezone.utc)}).inserted_id
+            temp.append(uid)
+            f_tok = login(email, "password123")
+            word = make_docx(fixtures.RESUME)
+            check(c.post("/api/students/me/resume", headers=H(f_tok), files={"file": ("Cut F resume.docx", word)}).status_code == 200,
+                  "student uploads a Word resume")
+            f_app = c.post(f"/api/drives/{drive_id}/apply", headers=H(f_tok)).json()["id"]
+            listed = next(x for x in c.get(f"/api/drives/{drive_id}/applicants", headers=H(rec)).json()["applicants"] if x["id"] == f_app)
+            check(listed["resume_file"]["name"] == "Cut F resume.docx", "the candidate list says which file was submitted")
+            r = c.get(f"/api/applications/{f_app}/resume", headers=H(rec))
+            check(r.status_code == 200 and r.content == word and r.headers["x-resume-kind"] == "file"
+                  and r.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+                  "the company opens the Word file itself, not a conversion")
+            c.post("/api/students/me/resume", headers=H(f_tok), files={"file": ("newer.pdf", make_pdf(fixtures.RESUME))})
+            check(c.get(f"/api/applications/{f_app}/resume", headers=H(rec)).content == word,
+                  "a newer upload doesn't change what the company sees for this application")
+            check(c.get(f"/api/applications/{f_app}/resume", headers=H(tpo)).status_code == 200, "the placement cell can read it too")
+            check(c.get(f"/api/applications/{f_app}/resume", headers=H(f_tok)).status_code == 403, "students can't open applications' files")
+            t = c.get(f"/api/applications/{apps['Cut A']}/resume", headers=H(rec))
+            check(t.status_code == 200 and t.headers["x-resume-kind"] == "text" and "Demo Student" in t.text,
+                  "a resume submitted as text is shown as that text")
     finally:
         if drive_id:
             db.drives.delete_one({"_id": ObjectId(drive_id)})
+            db.application_files.delete_many({"application_id": {"$in": [str(a["_id"]) for a in db.applications.find({"drive_id": drive_id}, {"_id": 1})]}})
             db.applications.delete_many({"drive_id": drive_id})
+            db.resume_files.delete_many({"student_id": {"$in": [str(x) for x in temp]}})
             db.updates.delete_many({"drive_id": drive_id})
         ids = [str(x) for x in temp]
         db.notifications.delete_many({"user_id": {"$in": ids}})

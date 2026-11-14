@@ -31,6 +31,7 @@ async def ensure_indexes() -> None:
     await db.approvals.create_index([("kind", 1), ("target_id", 1)])
     await db.announcements.create_index([("recipient_ids", 1), ("created_at", -1)])
     await db.resume_files.create_index("student_id")
+    await db.application_files.create_index("application_id", unique=True)
 
 
 def serialize(doc: dict) -> dict:
