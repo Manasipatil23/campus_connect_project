@@ -6,13 +6,12 @@ import { useAuth } from "../auth";
 import { AtsBreakdown, Review } from "../components/AtsBreakdown";
 import { Badge, ErrorNote, Modal, PageHeader, Spinner, Tabs, fmtDate, useApi } from "../components/ui";
 
-/** Shows the current resume: the uploaded PDF itself, or the text that was read from it. */
+/** Shows the uploaded resume as a PDF, exactly as the student uploaded it. */
 function ResumePreview({ resume, open, onClose }) {
   const file = resume.file;
   const isPdf = file?.content_type === "application/pdf";
   const [url, setUrl] = useState(null);
   const [err, setErr] = useState(null);
-  const [view, setView] = useState(isPdf ? "file" : "text");
 
   useEffect(() => {
     if (!open || !isPdf) return undefined;
@@ -25,23 +24,20 @@ function ResumePreview({ resume, open, onClose }) {
 
   return (
     <Modal open={open} onClose={onClose} title={`Preview · ${resume.filename}`} wide>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        {isPdf && <Tabs value={view} onChange={setView} options={[["file", "Your PDF"], ["text", "Text we read"]]} />}
-        {file && <button className="btn-ghost ml-auto px-3 py-1.5 text-xs" onClick={() => downloadFile("/students/me/resume/file", file.name).catch((e) => setErr(e.message))}>
-          <Download className="h-3.5 w-3.5" /> Download</button>}
-      </div>
+      {isPdf && (
+        <div className="mb-3 flex justify-end">
+          <button className="btn-ghost px-3 py-1.5 text-xs" onClick={() => downloadFile("/students/me/resume/file", file.name).catch((e) => setErr(e.message))}>
+            <Download className="h-3.5 w-3.5" /> Download</button>
+        </div>
+      )}
       <ErrorNote>{err}</ErrorNote>
-      {view === "file" && isPdf ? (
+      {isPdf ? (
         url ? <iframe src={url} title="Resume preview" className="h-[70vh] w-full rounded-xl border border-black/[.06] bg-white" />
           : !err && <Spinner label="Opening your resume…" />
       ) : (
-        <>
-          <p className="mb-2 text-xs text-ink-muted">
-            {file ? "This is the text recruiters' screening reads from your file. If something is missing here, it can't be matched."
-              : "Only the text of this resume is saved. Upload the file again to preview it as it looks."}
-          </p>
-          <pre className="max-h-[65vh] overflow-auto whitespace-pre-wrap rounded-xl bg-black/[.03] p-4 font-sans text-sm leading-relaxed text-ink-soft">{resume.text}</pre>
-        </>
+        <div className="rounded-xl bg-black/[.03] p-6 text-center text-sm text-ink-muted">
+          The preview shows your resume as a PDF. Upload your resume as a PDF file to preview it here.
+        </div>
       )}
     </Modal>
   );
@@ -94,7 +90,7 @@ function DriveFit() {
               <li key={r.drive_id} className="grid gap-3 py-4 sm:grid-cols-[1.4fr_1fr_auto] sm:items-center">
                 <div className="min-w-0">
                   <Link to={`/drives/${r.drive_id}`} className="font-medium hover:text-brand-700">{r.role}</Link>
-                  <div className="text-xs text-ink-muted">{r.company} · {r.ctc_lpa} LPA · {r.open ? "open" : "closed"}</div>
+                  <div className="text-xs text-ink-muted">{r.company} · {r.ctc_lpa} LPA · {r.closed_label ? r.closed_label.toLowerCase() : r.open ? "open" : "closed"}</div>
                   {r.missing_skills.length > 0 && (
                     <div className="mt-1.5 flex flex-wrap gap-1">{r.missing_skills.map((m) => <span key={m} className="chip bg-rose-50 text-rose-600">{m}</span>)}</div>
                   )}

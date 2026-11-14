@@ -18,7 +18,7 @@ from ..ml.llm import explain_decision, personalised_suggestions, review_resume
 from ..documents import TYPES, extension, extract_text
 from ..schemas import batch_error, FUNNEL, ROUND_LABELS, STAGE_LABELS, TERMINAL, NameIn, OfferResponseIn, ProfileIn, ResumeTextIn
 from ..workflow import ACCEPTING, STUDENT_VISIBLE, college_staff, drive_company_staff, drive_label, log_update, notify, now
-from .drives import get_drive, oid, screening_view, student_round
+from .drives import CLOSED_FOR_YOU, get_drive, oid, screening_view, student_round
 
 router = APIRouter(prefix="/api/students", tags=["students"])
 student_only = require_role("student")
@@ -154,9 +154,10 @@ async def drive_fit(user: dict = Depends(student_only)):
         open_now = d.get("status") in ACCEPTING and not (d.get("deadline") and d["deadline"] < today)
         eligible, reasons = check_eligibility(user, d)
         app = apps.get(did)
+        closed_label = CLOSED_FOR_YOU.get((app or {}).get("status"))   # live for others, over for this student
         rows.append({
             "drive_id": did, "company": d["company"], "role": d["role"], "ctc_lpa": d.get("ctc_lpa"),
-            "deadline": d.get("deadline"), "open": open_now,
+            "deadline": d.get("deadline"), "open": open_now and not closed_label, "closed_label": closed_label,
             "skill_fit": ats["skill_coverage"] if ats else None, "match": ats["score"] if ats else None,
             "matched_skills": ats["matched_skills"] if ats else [], "missing_skills": ats["missing_skills"] if ats else [],
             "fits": bool(ats and ats["skill_coverage"] >= FIT_THRESHOLD),

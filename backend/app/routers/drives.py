@@ -120,6 +120,21 @@ def student_round(r: dict) -> dict:
     return out
 
 
+CLOSED_FOR_YOU = {"rejected": "Closed for you · not selected", "withdrawn": "Closed for you · you withdrew",
+                  "declined": "Closed for you · offer declined", "accepted": "Offer accepted"}
+
+
+def mark_closed_for_student(item: dict, app: dict = None) -> dict:
+    """A drive can still be live for others while it's over for this student (not selected, withdrew,
+    declined or accepted the offer): say so, and don't present it as open to them."""
+    label = CLOSED_FOR_YOU.get((app or {}).get("status"))
+    item["closed_for_you"] = bool(label)
+    item["closed_label"] = label
+    if label:
+        item["accepting"] = False
+    return item
+
+
 def drive_out(d: dict) -> dict:
     item = serialize(d)
     item["status_label"] = DRIVE_STATUS.get(d.get("status"), d.get("status"))
@@ -175,6 +190,7 @@ async def list_drives(user: dict = Depends(active_user)):
             app = mine.get(item["id"])
             item["applied"] = app is not None
             item["application"] = {"id": str(app["_id"]), "status": app["status"]} if app else None
+            mark_closed_for_student(item, app)
             item["rounds"] = [student_round(r) for r in d.get("rounds", [])]
             item["pending_fields"] = sorted(f for f in (p or {}).get("fields", []) if f in STUDENT_FACING_FIELDS)
             if resume_text:
@@ -312,7 +328,7 @@ async def drive_detail(drive_id: str, user: dict = Depends(active_user)):
         item["pending_fields"] = sorted({c["field"] for c in pending if c["field"] in STUDENT_FACING_FIELDS})
         app = await db.applications.find_one({"drive_id": drive_id, "student_id": user["id"]}, {"status": 1})
         item["application"] = {"id": str(app["_id"]), "status": app["status"]} if app else None
-        return item
+        return mark_closed_for_student(item, app)
     item = drive_out(drive)
     item["pending_changes"] = [serialize(c) for c in pending]
     item["can"] = {

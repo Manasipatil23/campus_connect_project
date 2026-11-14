@@ -65,7 +65,8 @@ export default function StudentDrives() {
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
-                <Badge value={d.status} label={d.accepting ? "Applications open" : d.status_label} />
+                {d.closed_for_you ? <Badge value={d.application.status} label={d.closed_label} />
+                  : <Badge value={d.status} label={d.accepting ? "Applications open" : d.status_label} />}
                 {d.tier === "dream" && <Badge value="dream" />}
                 <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{d.location}</span>
                 {d.deadline && <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{d.deadline}</span>}

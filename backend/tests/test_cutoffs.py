@@ -70,6 +70,16 @@ def run():
             e_detail = c.get(f"/api/students/me/applications/{apps['Cut E']}", headers=H(tokens["Cut E"])).json()
             check(any("80% or more" in x["detail"] and "55%" in x["detail"] for x in e_detail["insights"]["resume"]["reasons"]),
                   "a rejected student sees the company's exact resume cut-off")
+            # the drive is still live for others, but closed for the student who wasn't selected
+            mine = next(x for x in c.get("/api/drives", headers=H(tokens["Cut E"])).json() if x["id"] == drive_id)
+            check(mine["status"] == "published" and mine["closed_for_you"] and not mine["accepting"]
+                  and mine["closed_label"] == "Closed for you · not selected", "not selected: the drive shows as closed for them")
+            page = c.get(f"/api/drives/{drive_id}", headers=H(tokens["Cut E"])).json()
+            check(page["closed_for_you"] and not page["accepting"], "the drive page says closed for them too")
+            fit = next(x for x in c.get("/api/students/me/drive-fit", headers=H(tokens["Cut E"])).json()["drives"] if x["drive_id"] == drive_id)
+            check(not fit["open"] and fit["closed_label"], "the resume page doesn't call it open either")
+            still = next(x for x in c.get("/api/drives", headers=H(tokens["Cut A"])).json() if x["id"] == drive_id)
+            check(not still["closed_for_you"], "a student still in the process isn't marked closed")
 
             # assessment: record scores, then clear 70%+ without rejecting the rest
             scores = {"Cut A": [90, 85, 88], "Cut B": [72, 70, 74], "Cut C": [50, 45, 60]}

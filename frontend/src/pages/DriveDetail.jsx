@@ -108,6 +108,7 @@ function StudentView({ d, reload }) {
             <>
               <div className="text-sm text-ink-muted">Your application</div>
               <div className="mt-2"><Badge value={d.application.status} /></div>
+              {d.closed_for_you && <p className="mt-3 text-sm text-ink-muted">{d.closed_label}. This drive may still be live for other students, but it's closed for you.</p>}
               <Link to={`/applications/${d.application.id}`} className="btn-primary mt-4 w-full">Open tracker <ChevronRight className="h-4 w-4" /></Link>
             </>
           ) : (
