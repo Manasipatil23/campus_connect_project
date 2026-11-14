@@ -185,6 +185,7 @@ class DriveIn(BaseModel):
     criteria: Criteria = Criteria()
     deadline: Optional[str] = None
     college_id: Optional[str] = None  # recruiters pick a college; coordinators use their own
+    company_id: Optional[str] = None  # coordinators: a connected company on Campus Connect (it then runs hiring)
     assessment_sections: List[str] = DEFAULT_SECTIONS
     rounds: List[RoundIn] = []
     criteria_confirmed: bool = False  # recruiter reviewed the skills extracted from the JD

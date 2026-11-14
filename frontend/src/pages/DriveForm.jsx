@@ -15,8 +15,11 @@ export default function DriveForm() {
   const navigate = useNavigate();
   const { data: directory } = useApi(isCollege ? "/colleges" : "/directory/colleges");
   const colleges = (directory || []).filter((c) => c.connection?.status === "accepted");
+  // placement cell: companies it's connected with on Campus Connect (a drive for one of them is linked to it)
+  const { data: conns } = useApi("/connections");
+  const companies = (conns || []).filter((c) => c.status === "accepted" && c.other).map((c) => ({ id: c.company_id, name: c.other.name.trim() }));
   const [f, setF] = useState({
-    college_id: "", sections: "Aptitude, Coding, Technical MCQ",
+    college_id: "", company_id: "", sections: "Aptitude, Coding, Technical MCQ",
     company: user.company || "", role: "", description: "", ctc_lpa: "", location: "", tier: "regular",
     skills: "", preferred: "", min_cgpa: "6.5", max_backlogs: "0", branches: [], deadline: "",
   });
@@ -77,6 +80,8 @@ export default function DriveForm() {
     } catch (e) { setError(e.message); }
   };
 
+  const linked = isCollege ? companies.find((c) => c.id === f.company_id) : null;   // a company on Campus Connect
+
   const submit = (send) => async (e) => {
     e.preventDefault();
     setBusy(true);
@@ -85,7 +90,7 @@ export default function DriveForm() {
       const d = await api("/drives", {
         method: "POST",
         body: {
-          company: f.company, role: f.role, description: f.description, ctc_lpa: Number(f.ctc_lpa),
+          company: linked ? linked.name : f.company, company_id: linked ? linked.id : null, role: f.role, description: f.description, ctc_lpa: Number(f.ctc_lpa),
           location: f.location, tier: f.tier, deadline: f.deadline || null,
           college_id: isCollege ? null : f.college_id,
           assessment_sections: f.sections.split(",").map((s) => s.trim()).filter(Boolean),
@@ -109,7 +114,7 @@ export default function DriveForm() {
   };
 
   const checklist = [
-    ...(isCollege ? [] : [["College selected", Boolean(f.college_id)]]),
+    ...(isCollege ? [["Company chosen", Boolean(linked || (f.company_id === "other" && f.company.trim()))]] : [["College selected", Boolean(f.college_id)]]),
     ["Role and CTC", Boolean(f.role && f.ctc_lpa)],
     ["Job description", f.description.length >= 30],
     ["Required skills", f.skills.trim().length > 0],
@@ -121,7 +126,7 @@ export default function DriveForm() {
     <>
       <PageHeader eyebrow={isCollege ? user.college?.name : user.company} title="New placement" accent="drive."
         subtitle={isCollege
-          ? "A drive your placement cell runs itself. It's approved on creation; publish it when you're ready."
+          ? "Create a drive for a company you're connected with, or for one that isn't on Campus Connect. It's approved on creation; publish it when you're ready."
           : "Save it as a draft or send it to the placement cell. Students only see it after the college reviews and publishes it."} />
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
       <form onSubmit={submit(!isCollege)} className="card space-y-6 p-6 sm:p-8">
@@ -135,7 +140,24 @@ export default function DriveForm() {
           </div>
         )}
         <div className="grid gap-4 sm:grid-cols-2">
-          <div><label className="label">Company</label><input className="input" value={f.company} onChange={set("company")} required disabled={!isCollege} /></div>
+          {isCollege ? (
+            <div className="sm:col-span-2">
+              <label className="label">Company</label>
+              <select className="input" value={f.company_id} onChange={set("company_id")} required>
+                <option value="" disabled>Choose the company…</option>
+                {companies.map((c) => <option key={c.id} value={c.id}>{c.name} · on Campus Connect</option>)}
+                <option value="other">Another company (not on Campus Connect)</option>
+              </select>
+              <p className="mt-1.5 text-xs text-ink-muted">
+                {linked ? `${linked.name} will see this drive in their portal and run hiring: shortlisting, scores and offers.`
+                  : f.company_id === "other" ? "Your placement cell runs hiring for this drive itself."
+                  : "Companies you're connected with are listed first. Their drives are run by the company."}
+              </p>
+              {f.company_id === "other" && <input className="input mt-2" value={f.company} onChange={set("company")} required placeholder="Company name" />}
+            </div>
+          ) : (
+            <div><label className="label">Company</label><input className="input" value={f.company} disabled /></div>
+          )}
           <div><label className="label">Role / department</label><input className="input" value={f.role} onChange={set("role")} required /></div>
           <div><label className="label">CTC (LPA, if shareable)</label><input type="number" step="0.1" min="0.1" className="input" value={f.ctc_lpa} onChange={set("ctc_lpa")} required /></div>
           <div><label className="label">Location</label><input className="input" value={f.location} onChange={set("location")} /></div>
@@ -259,7 +281,9 @@ export default function DriveForm() {
           <h2 className="font-medium">What happens next</h2>
           <ol className="mt-4 space-y-4 text-sm">
             {(isCollege
-              ? [["Created", "Approved straight away, since your college runs it"], ["Publish", "Eligible students are notified"], ["Run rounds", "Confirm dates and track applicants"]]
+              ? [["Created", linked ? `Approved straight away; ${linked.name} is notified` : "Approved straight away, since your college runs it"],
+                 ["Publish", "Only you can publish it. Eligible students are notified"],
+                 linked ? ["Company runs hiring", `${linked.name} screens, scores and makes offers; you track it`] : ["Run rounds", "Confirm dates and track applicants"]]
               : [["Placement cell reviews", "They approve it or ask for changes"], ["Published to students", "Only eligible students see it"], ["You screen applicants", "Resumes are compared with your JD"]]
             ).map(([t, d], i) => (
               <li key={t} className="flex gap-3">

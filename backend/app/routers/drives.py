@@ -80,8 +80,9 @@ def can_manage(user: dict, drive: dict) -> bool:
 
 
 def owns_hiring(user: dict, drive: dict) -> bool:
-    """Recruiters own hiring decisions. The college only runs them for drives it created itself."""
-    return is_company(user, drive) or (is_college(user, drive) and not drive.get("recruiter_id"))
+    """Recruiters own hiring decisions. The college only runs them for its own drives for a company
+    that isn't on Campus Connect; a drive linked to a company account is hired by that company."""
+    return is_company(user, drive) or (is_college(user, drive) and not drive.get("recruiter_id") and not drive.get("company_id"))
 
 
 def _check_view(user: dict, drive: dict):
@@ -240,6 +241,13 @@ async def create_drive(body: DriveIn, user: dict = Depends(managers)):
     if user["role"] == "coordinator":
         doc["college_id"] = user["college_id"]
         doc["company_id"] = None
+        if body.company_id:
+            # a company already on Campus Connect: link the drive to its account so it sees it and runs hiring
+            company = await db.companies.find_one({"_id": oid(body.company_id), "status": "approved"}, {"name": 1})
+            if not company or not await db.connections.find_one({"college_id": user["college_id"], "company_id": body.company_id,
+                                                                  "status": "accepted"}):
+                raise HTTPException(400, "Choose a company you're connected with, or type the name of one that isn't on Campus Connect")
+            doc["company_id"], doc["company"] = body.company_id, company["name"].strip()
     else:
         if not doc.get("college_id") or not await db.colleges.find_one({"_id": oid(doc["college_id"]), "status": "approved"}):
             raise HTTPException(400, "Choose the college this drive is for")
@@ -279,10 +287,14 @@ async def create_drive(body: DriveIn, user: dict = Depends(managers)):
     if status == "review":
         n = await notify(await college_staff(doc["college_id"]), "New drive to review",
                          f"{drive_label(doc)} was sent for review.", f"/drives/{did}", "drive")
+    elif user["role"] == "coordinator" and doc.get("company_id"):
+        n = await notify(await drive_company_staff(doc), "Placement cell created a drive for you",
+                         f"{drive_label(doc)}. You'll run hiring once it's published.", f"/drives/{did}", "drive")
     await log_update(entity="drive", entity_id=did, drive_id=did, college_id=doc["college_id"],
                      company_id=doc.get("company_id"), action="created",
                      summary=f"Drive created ({DRIVE_STATUS[status]})", by=user,
-                     notified=f"{n} placement staff" if n else None)
+                     notified=(f"{n} company users" if doc.get("company_id") and user["role"] == "coordinator"
+                               else f"{n} placement staff") if n else None)
     return drive_out(doc)
 
 

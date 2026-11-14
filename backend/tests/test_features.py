@@ -123,6 +123,25 @@ def run():
             check(c.get(f"/api/drives/{wrong['id']}", headers=H(stu)).json()["eligible"], "after the placement cell confirms, the student is eligible")
             db.change_requests.delete_many({"drive_id": wrong["id"]})
 
+            # ---- a placement-cell drive for a connected company is linked to that company -----------
+            rec_company = c.get("/api/auth/me", headers=H(rec)).json()["company_id"]
+            body = {"company": "typed name is ignored", "company_id": rec_company, "role": "Linked Drive Analyst", "description": JD,
+                    "ctc_lpa": 7, "required_skills": ["sql"]}
+            linked = c.post("/api/drives", headers=H(tpo), json=body).json()
+            drive_ids.append(linked["id"])
+            check(linked["company_id"] == rec_company and linked["company"] == "Nimbus Analytics" and linked["status"] == "approved",
+                  "college drive for a connected company is linked to its account")
+            check(any(x["id"] == linked["id"] for x in c.get("/api/drives", headers=H(rec)).json()), "the company sees the drive the college created")
+            check(c.get(f"/api/drives/{linked['id']}", headers=H(rec)).json()["can"]["hire"], "the company runs hiring on it")
+            check(not c.get(f"/api/drives/{linked['id']}", headers=H(tpo)).json()["can"]["hire"], "the placement cell doesn't")
+            check(c.post(f"/api/drives/{linked['id']}/publish", headers=H(rec)).status_code == 403, "the company still can't publish it")
+            check(c.post("/api/drives", headers=H(tpo), json={**body, "company_id": str(ObjectId())}).status_code == 400,
+                  "can't link a company you aren't connected with")
+            own = c.post("/api/drives", headers=H(tpo), json={**body, "company": "Offline Co", "company_id": None}).json()
+            drive_ids.append(own["id"])
+            check(own["company_id"] is None and c.get(f"/api/drives/{own['id']}", headers=H(tpo)).json()["can"]["hire"],
+                  "a company not on Campus Connect: the placement cell runs hiring")
+
             # ---- only this season's batch can sign in -------------------------------------------
             for other in (SEASON + 1, SEASON - 1):
                 db.users.update_one({"email": "student@campusconnect.dev"}, {"$set": {"profile.grad_year": other}})
