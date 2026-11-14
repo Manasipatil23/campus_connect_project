@@ -1,10 +1,51 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, ClipboardPaste, UploadCloud } from "lucide-react";
-import { api } from "../api";
+import { ArrowRight, ClipboardPaste, Download, Eye, UploadCloud } from "lucide-react";
+import { api, downloadFile, fileUrl } from "../api";
 import { useAuth } from "../auth";
 import { AtsBreakdown, Review } from "../components/AtsBreakdown";
-import { Badge, ErrorNote, PageHeader, Spinner, Tabs, fmtDate, useApi } from "../components/ui";
+import { Badge, ErrorNote, Modal, PageHeader, Spinner, Tabs, fmtDate, useApi } from "../components/ui";
+
+/** Shows the current resume: the uploaded PDF itself, or the text that was read from it. */
+function ResumePreview({ resume, open, onClose }) {
+  const file = resume.file;
+  const isPdf = file?.content_type === "application/pdf";
+  const [url, setUrl] = useState(null);
+  const [err, setErr] = useState(null);
+  const [view, setView] = useState(isPdf ? "file" : "text");
+
+  useEffect(() => {
+    if (!open || !isPdf) return undefined;
+    let live = true, made = null;
+    setErr(null); setUrl(null);
+    fileUrl("/students/me/resume/file").then((u) => { made = u; if (live) setUrl(u); else URL.revokeObjectURL(u); })
+      .catch((e) => live && setErr(e.message));
+    return () => { live = false; if (made) URL.revokeObjectURL(made); };
+  }, [open, isPdf, file?.id]);
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Preview · ${resume.filename}`} wide>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        {isPdf && <Tabs value={view} onChange={setView} options={[["file", "Your PDF"], ["text", "Text we read"]]} />}
+        {file && <button className="btn-ghost ml-auto px-3 py-1.5 text-xs" onClick={() => downloadFile("/students/me/resume/file", file.name).catch((e) => setErr(e.message))}>
+          <Download className="h-3.5 w-3.5" /> Download</button>}
+      </div>
+      <ErrorNote>{err}</ErrorNote>
+      {view === "file" && isPdf ? (
+        url ? <iframe src={url} title="Resume preview" className="h-[70vh] w-full rounded-xl border border-black/[.06] bg-white" />
+          : !err && <Spinner label="Opening your resume…" />
+      ) : (
+        <>
+          <p className="mb-2 text-xs text-ink-muted">
+            {file ? "This is the text recruiters' screening reads from your file. If something is missing here, it can't be matched."
+              : "Only the text of this resume is saved. Upload the file again to preview it as it looks."}
+          </p>
+          <pre className="max-h-[65vh] overflow-auto whitespace-pre-wrap rounded-xl bg-black/[.03] p-4 font-sans text-sm leading-relaxed text-ink-soft">{resume.text}</pre>
+        </>
+      )}
+    </Modal>
+  );
+}
 
 function Tile({ value, label, hint, tone = "text-ink" }) {
   return (
@@ -81,6 +122,7 @@ export default function Resume() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [preview, setPreview] = useState(false);
   const fileRef = useRef();
 
   const run = async (req) => {
@@ -137,8 +179,9 @@ export default function Resume() {
           )}
           <div className="mt-4"><ErrorNote>{error}</ErrorNote></div>
           {resume && (
-            <div className="mt-4 text-xs text-ink-muted">
-              Current: <span className="font-medium text-ink-soft">{resume.filename}</span> · {resume.ats.word_count} words
+            <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-ink-muted">
+              <span className="min-w-0">Current: <span className="font-medium text-ink-soft [overflow-wrap:anywhere]">{resume.filename}</span> · {resume.ats.word_count} words</span>
+              <button className="btn-soft ml-auto px-3 py-1.5 text-xs" onClick={() => setPreview(true)}><Eye className="h-3.5 w-3.5" /> Preview</button>
             </div>
           )}
         </div>
@@ -155,6 +198,8 @@ export default function Resume() {
         </div>
       </div>
       {resume && <div className="mt-6"><DriveFit key={resume.updated_at} /></div>}
+      {/* outside the cards: their blur would trap a fixed-position window inside them */}
+      {resume && <ResumePreview key={resume.updated_at} resume={resume} open={preview} onClose={() => setPreview(false)} />}
     </>
   );
 }

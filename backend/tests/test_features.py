@@ -74,6 +74,20 @@ def run():
             tpo, stu = login("tpo@campusconnect.dev", "tpo123"), login("student@campusconnect.dev", "student123")
             college_id = c.get("/api/auth/me", headers=H(tpo)).json()["college_id"]
 
+            # ---- resume preview: the original file is kept and only its owner can open it -------
+            RESUME = ("Demo Student. Skills: Python, SQL, Power BI. Projects: built a sales dashboard that cut "
+                      "reporting time by 40 percent. Internship: data analyst intern at Acme for three months.")
+            r = c.post("/api/students/me/resume", headers=H(stu), files={"file": ("My Resume.pdf", make_pdf(RESUME))})
+            check(r.status_code == 200 and r.json()["file"]["name"] == "My Resume.pdf", "uploaded resume file is kept")
+            f = c.get("/api/students/me/resume/file", headers=H(stu))
+            check(f.status_code == 200 and f.content.startswith(b"%PDF") and f.headers["content-type"] == "application/pdf"
+                  and f.headers["content-disposition"].startswith("inline"), "student previews their own resume PDF")
+            check(c.get("/api/students/me/resume/file", headers=H(tpo)).status_code == 403, "nobody else can open it here")
+            c.post("/api/students/me/resume/text", headers=H(stu), json={"text": RESUME})
+            check(c.get("/api/students/me/resume/file", headers=H(stu)).status_code == 404
+                  and db.resume_files.count_documents({"student_id": str(stu_doc["_id"])}) == 0,
+                  "pasted text replaces the old file (no stale preview)")
+
             # ---- JD upload -------------------------------------------------------------
             up = lambda name, data: c.post("/api/drives/jd-file", headers=H(tpo), files={"file": (name, data)})
             r = up("jd.docx", make_docx(JD))
@@ -206,8 +220,10 @@ def run():
         db.approvals.delete_many({"target_id": {"$in": ids}})
         db.notifications.delete_many({"user_id": {"$in": ids}})
         db.users.delete_many({"_id": {"$in": temp_students}})
+        db.resume_files.delete_many({"student_id": str(stu_doc["_id"])})
         db.users.update_one({"email": "student@campusconnect.dev"}, {
-            "$set": {"name": stu_doc["name"], "first_name": stu_doc.get("first_name"), "last_name": stu_doc.get("last_name"), "status": "active"},
+            "$set": {"name": stu_doc["name"], "first_name": stu_doc.get("first_name"), "last_name": stu_doc.get("last_name"), "status": "active",
+                     "resume": stu_doc.get("resume"), "profile.skills": (stu_doc.get("profile") or {}).get("skills", [])},
             "$unset": {"name_change": "", "name_history": "", "suspended_at": "", "review_note": ""}})
         fixtures.reset(db, since)
         db.notifications.delete_many({"created_at": {"$gte": since}})
