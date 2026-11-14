@@ -36,15 +36,18 @@ def run():
     try:
         with TestClient(app) as c:
             code = c.post("/api/auth/send-code", json={"email": "tpo@testinst.edu.in", "kind": "college", "domain": "testinst.edu.in"}).json()["dev_code"]
-            body = dict(name="Test Institute of Engineering", aishe_code="C-99881", institution_type="Private",
+            body = dict(name="Test Institute of Engineering", short="T.I.E Nashik", aishe_code="C-99881", institution_type="Private",
                         affiliated_university="University of Testing", established_year=1999, naac_grade="A",
                         website="https://www.testinst.edu.in", address="12, Long Test Road, Nashik", city="Nashik",
                         state="Maharashtra", pincode="422001", phone="02532345678", email_domain="testinst.edu.in",
                         student_email_domain="student.testinst.edu.in", tpo_name="Test Officer", tpo_designation="TPO",
                         tpo_email="tpo@testinst.edu.in", tpo_phone="9820011111", code="000000", password="password123")
             check(c.post("/api/auth/register/college", json=body), 400, "college: wrong code rejected")
+            no_short = {k: v for k, v in body.items() if k != "short"}
+            check(c.post("/api/auth/register/college", json={**no_short, "code": code}), 422, "college: short name is required, never made up")
             r = check(c.post("/api/auth/register/college", json={**body, "code": code}), 200, "college: registered")
             tpo, col_id = r["token"], r["user"]["college_id"]
+            assert r["user"]["college"]["short"] == "T.I.E Nashik", "college: short name kept exactly as typed"
             assert r["user"]["status"] == "pending" and r["user"]["college"]["status"] == "pending"
             check(c.get("/api/college/students", headers=H(tpo)), 403, "college: pending TPO locked out")
             check(c.get("/api/colleges").__class__ and c.post("/api/auth/send-code", json={"email": "x@student.testinst.edu.in", "kind": "student", "college_id": col_id}), 400, "student: can't join unapproved college")
@@ -71,6 +74,12 @@ def run():
             assert entry and entry["decision"] == "approved" and entry["tier"] == 2 and entry["email"] == "tpo@testinst.edu.in"
             print("  ok  mongodb: college approval stored in `approvals`")
             check(c.get("/api/college/students", headers=H(tpo)), 200, "college: TPO active after approval")
+            prof = c.get("/api/org/profile", headers=H(tpo)).json()
+            edit = {"person": {k: prof["person"][k] for k in ("name", "designation", "phone")},
+                    "college": {**{k: prof["org"].get(k) for k in ("website", "address", "city", "state", "pincode", "phone")}, "short": "TIEN"}}
+            check(c.put("/api/org/profile", json=edit, headers=H(tpo)), 200, "college: edits its short name")
+            assert c.get("/api/auth/me", headers=H(tpo)).json()["college"]["short"] == "TIEN"
+            check(c.put("/api/org/profile", json={**edit, "college": {**edit["college"], "short": " "}}, headers=H(tpo)), 422, "college: short name can't be blank")
 
             check(c.post("/api/auth/send-code", json={"email": "stu@gmail.com", "kind": "student", "college_id": col_id}), 400, "student: must use college domain")
             sc = c.post("/api/auth/send-code", json={"email": "riya@student.testinst.edu.in", "kind": "student", "college_id": col_id}).json()["dev_code"]

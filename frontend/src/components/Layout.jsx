@@ -124,7 +124,7 @@ export default function Layout() {
       </nav>
       <div className="mt-auto border-t border-black/[.06] px-3 pt-4">
         <div className="truncate text-sm font-medium">{user.name}</div>
-        <div className="truncate text-xs text-ink-muted">{user.college?.short ? `${user.college.short} · ${user.college.city}` : user.company || user.email}</div>
+        <div className="truncate text-xs text-ink-muted">{user.college ? `${user.college.short || user.college.name} · ${user.college.city}` : user.company || user.email}</div>
         <button onClick={logout} className="mt-3 flex items-center gap-2 text-sm text-ink-muted hover:text-ink"><LogOut className="h-4 w-4" /> Sign out</button>
       </div>
     </div>

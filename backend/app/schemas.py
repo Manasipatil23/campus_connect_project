@@ -280,6 +280,8 @@ class ResumeTextIn(BaseModel):
 
 # ---- onboarding -------------------------------------------------------------
 PHONE = r"^(\+91[\s-]?)?[6-9]\d{9}$"
+# a college's short name exactly as the college writes it (KJSSE, VJTI, IIT-B, K.J. Somaiya…): never generated
+SHORT_NAME = r"^[A-Za-z0-9.&()' -]*[A-Za-z0-9][A-Za-z0-9.&()' -]*$"   # 2-20 chars, at least one letter or digit
 NAAC_GRADES = Literal["A++", "A+", "A", "B++", "B+", "B", "C", "Not accredited"]
 
 
@@ -306,6 +308,7 @@ class StudentSignupIn(BaseModel):
 class CollegeSignupIn(BaseModel):
     # institution
     name: str = Field(min_length=5, max_length=150)
+    short: str = Field(min_length=2, max_length=20, pattern=SHORT_NAME, description="The college's own short name, e.g. KJSSE")
     aishe_code: str = Field(pattern=r"^[CUS]-\d{3,6}$", description="AISHE code, e.g. C-41234")
     institution_type: Literal["Government", "Government-aided", "Private", "Autonomous", "Deemed university"]
     affiliated_university: str = Field(min_length=3, max_length=150)

@@ -174,7 +174,7 @@ async def register_college(body: CollegeSignupIn):
     now = datetime.now(timezone.utc)
     college = body.model_dump(exclude={"tpo_name", "tpo_designation", "tpo_email", "tpo_phone", "code", "password"})
     college.update(aishe_code=body.aishe_code.upper(), email_domain=domain, status="pending", tier=None,
-                   short="".join(w[0] for w in body.name.split() if w[0].isupper())[:5], created_at=now)
+                   short=" ".join(body.short.split()), created_at=now)   # as the college typed it, never guessed
     college_id = str((await db.colleges.insert_one(college)).inserted_id)
     doc = await _insert_user({
         "name": body.tpo_name, "designation": body.tpo_designation, "email": email, "phone": body.tpo_phone,

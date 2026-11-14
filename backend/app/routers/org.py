@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from ..auth import require_role
 from ..db import db, serialize
-from ..schemas import PHONE
+from ..schemas import PHONE, SHORT_NAME
 from .drives import oid
 
 router = APIRouter(prefix="/api/org", tags=["org"])
@@ -42,6 +42,7 @@ class CompanyIn(BaseModel):
 
 
 class CollegeIn(BaseModel):
+    short: str = Field(min_length=2, max_length=20, pattern=SHORT_NAME)   # the college's own short name, e.g. KJSSE
     website: str = Field(pattern=r"^https?://[\w.-]+\.[a-z]{2,}(/.*)?$")
     address: str = Field(min_length=10, max_length=300)
     city: str = Field(min_length=2, max_length=60)
@@ -95,5 +96,8 @@ async def update_profile(body: OrgProfileIn, user: dict = Depends(org_member)):
     if not org_update:
         raise HTTPException(400, f"Send the {kind} details")
     await db.users.update_one({"_id": ObjectId(user["id"])}, {"$set": body.person.model_dump()})
-    await db[coll].update_one({"_id": oid(user[field])}, {"$set": org_update.model_dump()})
+    changes = org_update.model_dump()
+    if "short" in changes:
+        changes["short"] = " ".join(changes["short"].split())
+    await db[coll].update_one({"_id": oid(user[field])}, {"$set": changes})
     return await my_profile({**user, **body.person.model_dump()})

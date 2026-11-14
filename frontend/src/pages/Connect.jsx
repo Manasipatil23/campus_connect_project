@@ -169,8 +169,8 @@ export default function Connect() {
                 <Tilt max={6} className="h-full rounded-2xl">
                   <div className="card flex h-full flex-col p-6">
                     <div className="flex items-start justify-between gap-3">
-                      <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-100 to-white text-sm font-semibold text-brand-700">
-                        {(o.short || o.name).slice(0, 3).toUpperCase()}
+                      <span className="flex h-11 min-w-11 max-w-[60%] items-center justify-center truncate rounded-2xl bg-gradient-to-br from-brand-100 to-white px-2.5 text-sm font-semibold text-brand-700">
+                        {isCollege ? o.name.slice(0, 3).toUpperCase() : o.short || o.name.slice(0, 1)}
                       </span>
                       {isCollege ? <span className="chip bg-black/[.04] text-ink-soft">{o.size} people</span>
                         : <span className={`chip ${TIER_STYLE[o.tier] || "bg-black/[.05]"}`}>Tier {o.tier}</span>}
