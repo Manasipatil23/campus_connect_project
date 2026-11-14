@@ -12,7 +12,7 @@ from bson.errors import InvalidId
 from fastapi import APIRouter, Depends, HTTPException
 from pymongo.errors import DuplicateKeyError
 
-from ..auth import create_token, current_user, hash_password, is_allowed_admin, is_junior, verify_password
+from ..auth import batch_closed, batch_closed_message, create_token, current_user, hash_password, is_allowed_admin, verify_password
 from ..db import db, serialize
 from ..config import ALLOW_PERSONAL_EMAIL
 from ..emailing import FREE_PROVIDERS, check_email, consume_code, domain_of, issue_code
@@ -34,7 +34,6 @@ async def with_org(user: dict) -> dict:
     """Attach the user's college / company (and its approval status)."""
     if user.get("role") == "student":
         user["season_batch"] = season_batch()
-        user["junior"] = is_junior(user)   # junior batch: only interview experiences are open
     if user.get("college_id"):
         c = await db.colleges.find_one({"_id": ObjectId(user["college_id"])})
         if c:
@@ -220,6 +219,8 @@ async def login(body: LoginIn):
         raise HTTPException(403, "This isn't a platform admin account. Use the regular sign-in.")
     if user.get("role") == "admin" and not is_allowed_admin(user["email"]):
         raise HTTPException(403, "Platform admin access is limited to approved addresses")
+    if batch_closed(user):
+        raise HTTPException(403, batch_closed_message())
     now = datetime.now(timezone.utc)
     await db.users.update_one({"_id": user["_id"]}, {"$set": {"last_login_at": now, "last_seen_at": now},
                                                       "$inc": {"login_count": 1}})
@@ -228,6 +229,8 @@ async def login(body: LoginIn):
 
 @router.get("/auth/me")
 async def me(user: dict = Depends(current_user)):
+    if batch_closed(user):   # an older sign-in from another batch is ended too
+        raise HTTPException(403, batch_closed_message())
     # the app calls this on every visit, so it doubles as "last active"
     await db.users.update_one({"_id": ObjectId(user["id"])}, {"$set": {"last_seen_at": datetime.now(timezone.utc)}})
     return await with_org(user)

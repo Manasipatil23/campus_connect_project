@@ -228,10 +228,9 @@ export function seasonBatch(now = new Date()) {
   return now.getMonth() >= 5 ? now.getFullYear() + 1 : now.getFullYear();
 }
 
-/** Graduating batches students may sign up with: this season's batch and the one just junior to it. */
+/** Graduating batches students may sign up with: only this season's batch. */
 export function openBatches() {
-  const s = seasonBatch();
-  return [s, s + 1];
+  return [seasonBatch()];
 }
 
 /** Drives are always for this season's batch; shown, not chosen. */

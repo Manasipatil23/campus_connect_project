@@ -142,7 +142,7 @@ function StudentSignup() {
           <Field label="Branch" error={errors.branch}>
             <select className="input" value={f.branch} onChange={set("branch")}><option value="">Select…</option>{BRANCHES.map((b) => <option key={b}>{b}</option>)}</select>
           </Field>
-          <Field label="Graduation year" error={errors.grad_year} hint={`Open to the ${batches.join(" and ")} batches: this year's placement batch and the one just junior to it.`}>
+          <Field label="Graduation year" error={errors.grad_year} hint={`This placement season is open to the ${batches.join(" and ")} graduating batch only.`}>
             <select className="input" value={f.grad_year} onChange={set("grad_year")}>
               <option value="" disabled>Select…</option>
               {batches.map((y) => <option key={y} value={y}>{y}</option>)}

@@ -78,9 +78,9 @@ def run():
                            college_id=col_id, roll_number="22ce001", branch="Computer", phone="9820022222")
             season = season_batch()   # the batch being placed this season (June to May)
             check(c.get("/api/grad-years"), 200, "batches open today")
-            assert c.get("/api/grad-years").json()["years"] == [season, season + 1]
+            assert c.get("/api/grad-years").json()["years"] == [season]
             check(c.post("/api/auth/register/student", json={**student, "grad_year": season - 1}), 400, "student: last season's graduates can't sign up")
-            check(c.post("/api/auth/register/student", json={**student, "grad_year": season + 2}), 400, "student: batches too far ahead can't sign up")
+            check(c.post("/api/auth/register/student", json={**student, "grad_year": season + 1}), 400, "student: the junior batch can't sign up")
             r = check(c.post("/api/auth/register/student", json={**student, "grad_year": season}), 200, "student: this season's batch registered")
             st = r["token"]
             check(c.get("/api/drives", headers=H(st)), 403, "student: pending locked out")

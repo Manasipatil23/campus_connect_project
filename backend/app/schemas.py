@@ -103,16 +103,14 @@ def season_batch(today: Optional[date] = None) -> int:
 
 
 def open_batches(today: Optional[date] = None) -> List[int]:
-    """Graduation years that may sign up: this season's batch and the one just junior to it."""
-    s = season_batch(today)
-    return [s, s + 1]
+    """Graduation years that may sign up and sign in: only this season's batch."""
+    return [season_batch(today)]
 
 
 def batch_error(year: int) -> Optional[str]:
-    allowed = open_batches()
-    if year in allowed:
+    if year in open_batches():
         return None
-    return f"Sign-ups are open to the {allowed[0]} and {allowed[1]} graduating batches only"
+    return f"Campus Connect is open to the {season_batch()} graduating batch only this placement season"
 
 
 class ProfileIn(BaseModel):

@@ -123,23 +123,14 @@ def run():
             check(c.get(f"/api/drives/{wrong['id']}", headers=H(stu)).json()["eligible"], "after the placement cell confirms, the student is eligible")
             db.change_requests.delete_many({"drive_id": wrong["id"]})
 
-            # ---- junior batch: only interview experiences --------------------------------------
-            db.users.update_one({"email": "student@campusconnect.dev"}, {"$set": {"profile.grad_year": SEASON + 1}})
-            me = c.get("/api/auth/me", headers=H(stu)).json()
-            check(me["junior"] is True and me["season_batch"] == SEASON, f"a {SEASON + 1} student is marked junior")
-            blocked = [p for p in ("/api/drives", "/api/students/me/dashboard", "/api/students/me/analytics", "/api/announcements",
-                                   "/api/issues", f"/api/drives/{d['id']}") if c.get(p, headers=H(stu)).status_code != 403]
-            check(not blocked, f"junior can't see drives, results, insights or notices {blocked or ''}")
-            check(c.get("/api/experiences", headers=H(stu)).status_code == 200 and c.get("/api/experiences/companies", headers=H(stu)).status_code == 200,
-                  "junior can read interview experiences")
-            check(c.post("/api/experiences", headers=H(stu), json={"company": "X", "role": "Y", "round_type": "Other", "difficulty": 3,
-                                                                    "outcome": "awaiting"}).status_code == 403, "junior can't post experiences")
-            check(c.put("/api/students/me/name", headers=H(stu), json={"first_name": "Demo", "last_name": "Student"}).status_code == 200,
-                  "junior can still manage their own profile")
-            r = c.post("/api/announcements", headers=H(tpo), json={"title": "Season notice test", "body": "Only for this season.", "audience": "all"}).json()
-            check(str(stu_doc["_id"]) not in (db.announcements.find_one({"_id": ObjectId(r["id"])}) or {}).get("recipient_ids", []),
-                  "notices to all students skip the junior batch")
-            db.announcements.delete_one({"_id": ObjectId(r["id"])})
+            # ---- only this season's batch can sign in -------------------------------------------
+            for other in (SEASON + 1, SEASON - 1):
+                db.users.update_one({"email": "student@campusconnect.dev"}, {"$set": {"profile.grad_year": other}})
+                check(c.post("/api/auth/login", json={"email": "student@campusconnect.dev", "password": "student123"}).status_code == 403,
+                      f"a {other} student can't sign in")
+                blocked = [p for p in ("/api/auth/me", "/api/drives", "/api/students/me/dashboard", "/api/experiences")
+                           if c.get(p, headers=H(stu)).status_code != 403]
+                check(not blocked, f"an existing {other} sign-in is shut out {blocked or ''}")
             db.users.update_one({"email": "student@campusconnect.dev"}, {"$set": {"profile.grad_year": SEASON}})
             check(c.get("/api/drives", headers=H(stu)).status_code == 200, f"a {SEASON} student sees drives again")
 
