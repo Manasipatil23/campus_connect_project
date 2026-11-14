@@ -291,7 +291,7 @@ function AssessmentInsights({ ins }) {
       {!ins.cleared && <Story story={ins.story} />}
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="card p-5"><div className="text-xs text-ink-muted">Your overall</div><div className="mt-2 text-3xl font-medium tabular-nums">{ins.total}%</div></div>
-        <div className="card p-5"><div className="text-xs text-ink-muted">Estimated cut-off</div><div className="mt-2 text-3xl font-medium tabular-nums">{ins.cutoff_estimate}%</div><div className="text-xs text-ink-muted">Lowest overall among those who cleared</div></div>
+        <div className="card p-5"><div className="text-xs text-ink-muted">{ins.cutoff_official ? "Cut-off" : "Estimated cut-off"}</div><div className="mt-2 text-3xl font-medium tabular-nums">{ins.cutoff_estimate}%</div><div className="text-xs text-ink-muted">{ins.cutoff_official ? "The company's cut-off" : "Lowest overall among those who cleared"}</div></div>
         <div className="card p-5"><div className="text-xs text-ink-muted">Your percentile</div><div className="mt-2 text-3xl font-medium tabular-nums">{ins.percentile}<span className="text-base">th</span></div><div className="text-xs text-ink-muted">Among everyone who took it</div></div>
       </div>
       <div className="card p-6">

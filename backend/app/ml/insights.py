@@ -347,7 +347,8 @@ def assessment_insights(you_app: dict, assessed: List[dict]) -> dict:
                          "cleared_min": min(c_scores), "percentile": pct,
                          "gap": round(_median(c_scores) - score, 1)})
 
-    total = round(statistics.mean(you.values()), 1)
+    raw_total = statistics.mean(you.values())
+    total = round(raw_total, 1)
     c_totals = [statistics.mean(a["assessment"]["sections"].values()) for a in cleared]
     all_totals = [statistics.mean(a["assessment"]["sections"].values()) for a in assessed]
     weakest = sorted(sections, key=lambda s: -s["gap"])
@@ -367,7 +368,8 @@ def assessment_insights(you_app: dict, assessed: List[dict]) -> dict:
         "total": total,
         "cutoff_estimate": round(min(c_totals), 1),
         "cleared_median_total": _median(c_totals),
-        "percentile": round(100 * sum(t <= total for t in all_totals) / len(all_totals)),
+        # compare unrounded averages: rounding the student's own total (50.33 -> 50.3) dropped them below themselves
+        "percentile": round(100 * sum(t <= raw_total for t in all_totals) / len(all_totals)),
         "sections": sections,
         "suggestions": suggestions[:4],
     }

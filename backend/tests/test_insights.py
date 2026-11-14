@@ -47,6 +47,16 @@ def run():
     n = assessment_insights(mine, [mine])
     check(n["cutoff_estimate"] is None and n["reasons"][0]["title"] == "Nobody cleared this assessment", "nobody cleared: said plainly")
 
+    # enough students cleared for full statistics: an average that rounds down still counts the student themself
+    def took(i, scores, cleared):
+        return {"_id": i, "status": "assessment_cleared" if cleared else "rejected",
+                "history": [{"status": "assessment_cleared" if cleared else "shortlisted"}], "assessment": {"sections": scores}}
+    low = took(10, {"Aptitude": 58, "Technical MCQ": 52, "Coding": 41}, False)   # 50.33 -> shown as 50.3
+    group = [low] + [took(11 + k, s, True) for k, s in enumerate([{"Aptitude": 82, "Technical MCQ": 78, "Coding": 74},
+             {"Aptitude": 72, "Technical MCQ": 70, "Coding": 66}, {"Aptitude": 70, "Technical MCQ": 74, "Coding": 68}])]
+    full = assessment_insights(low, group)
+    check(not full.get("brief") and full["total"] == 50.3 and full["percentile"] == 25, "the lowest of four is the 25th percentile, not 0th")
+
     # turned down at the assessment: compare the resume with the one candidate who went further
     job = {"required_skills": ["sql", "python", "power bi", "excel", "docker"]}
     you = {"ats": {**ats(61, ["sql", "python", "docker"]), "skill_coverage": 61}}
