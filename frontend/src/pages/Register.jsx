@@ -142,7 +142,7 @@ function StudentSignup() {
           <Field label="Branch" error={errors.branch}>
             <select className="input" value={f.branch} onChange={set("branch")}><option value="">Select…</option>{BRANCHES.map((b) => <option key={b}>{b}</option>)}</select>
           </Field>
-          <Field label="Graduation year" error={errors.grad_year} hint={`Open to the ${batches.join(" and ")} batches: this year's placement batch and the one just junior to it.`}>
+          <Field label="Graduation year" error={errors.grad_year} hint={`This placement season is open to the ${batches.join(" and ")} graduating batch only.`}>
             <select className="input" value={f.grad_year} onChange={set("grad_year")}>
               <option value="" disabled>Select…</option>
               {batches.map((y) => <option key={y} value={y}>{y}</option>)}
@@ -175,7 +175,7 @@ function CollegeSignup() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const { f, setF, set, errors, validate } = useForm({
-    name: "", aishe_code: "", institution_type: "", affiliated_university: "", established_year: "", naac_grade: "", nirf_rank: "",
+    name: "", short: "", aishe_code: "", institution_type: "", affiliated_university: "", established_year: "", naac_grade: "", nirf_rank: "",
     website: "", email_domain: "", student_email_domain: "", address: "", city: "", state: "", pincode: "", phone: "",
     tpo_name: "", tpo_designation: "Training & Placement Officer", tpo_email: "", tpo_phone: "", code: "", password: "", confirm: "",
   });
@@ -183,7 +183,9 @@ function CollegeSignup() {
   const steps = ["Institution", "Address & web", "Placement officer", "Password"];
   const next = () => {
     if (step === 0 && !validate({
-      name: (v) => (v.trim().length >= 5 ? null : "Enter the full registered name"), aishe_code: (v) => check(v, "aishe"),
+      name: (v) => (v.trim().length >= 5 ? null : "Enter the full registered name"),
+      short: (v) => (/^(?=.*[A-Za-z0-9])[A-Za-z0-9.&()' -]{2,20}$/.test(v.trim()) ? null : "Enter the short name your college uses (2–20 letters or digits)"),
+      aishe_code: (v) => check(v, "aishe"),
       institution_type: req("Type"), affiliated_university: req("Affiliating university"), naac_grade: req("NAAC grade"),
       established_year: (v) => (v >= 1850 && v <= 2026 ? null : "Enter a valid year"),
       nirf_rank: (v) => (!v || (v >= 1 && v <= 1000) ? null : "NIRF rank is 1–1000"),
@@ -208,7 +210,7 @@ function CollegeSignup() {
     try {
       const { confirm, ...body } = f;
       signIn(await api("/auth/register/college", { method: "POST", body: {
-        ...body, aishe_code: f.aishe_code.toUpperCase(), established_year: Number(f.established_year),
+        ...body, short: f.short.trim(), aishe_code: f.aishe_code.toUpperCase(), established_year: Number(f.established_year),
         nirf_rank: f.nirf_rank ? Number(f.nirf_rank) : null, student_email_domain: f.student_email_domain || null } }));
       clearDraft();
       navigate("/");
@@ -224,6 +226,7 @@ function CollegeSignup() {
       {step === 0 && (
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Registered name of the institution" error={errors.name} className="sm:col-span-2"><input className="input" value={f.name} onChange={set("name")} /></Field>
+          <Field label="Short name" error={errors.short} hint="Exactly as your college writes it, e.g. KJSSE. Shown to students and companies; you can change it later."><input className="input" maxLength={20} value={f.short} onChange={set("short")} /></Field>
           <Field label="AISHE code" error={errors.aishe_code} hint="From aishe.gov.in, e.g. C-41234"><input className="input uppercase" value={f.aishe_code} onChange={set("aishe_code")} /></Field>
           <Field label="Type" error={errors.institution_type}>
             <select className="input" value={f.institution_type} onChange={set("institution_type")}><option value="">Select…</option>

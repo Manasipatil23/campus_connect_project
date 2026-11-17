@@ -80,8 +80,9 @@ def can_manage(user: dict, drive: dict) -> bool:
 
 
 def owns_hiring(user: dict, drive: dict) -> bool:
-    """Recruiters own hiring decisions. The college only runs them for drives it created itself."""
-    return is_company(user, drive) or (is_college(user, drive) and not drive.get("recruiter_id"))
+    """Recruiters own hiring decisions. The college only runs them for its own drives for a company
+    that isn't on Campus Connect; a drive linked to a company account is hired by that company."""
+    return is_company(user, drive) or (is_college(user, drive) and not drive.get("recruiter_id") and not drive.get("company_id"))
 
 
 def _check_view(user: dict, drive: dict):
@@ -117,6 +118,21 @@ def student_round(r: dict) -> dict:
         prev = [h.get("old", {}).get("date") for h in r.get("history", []) if h.get("old", {}).get("date")]
         out["previous_date"] = prev[-1] if prev else None
     return out
+
+
+CLOSED_FOR_YOU = {"rejected": "Closed for you · not selected", "withdrawn": "Closed for you · you withdrew",
+                  "declined": "Closed for you · offer declined", "accepted": "Offer accepted"}
+
+
+def mark_closed_for_student(item: dict, app: dict = None) -> dict:
+    """A drive can still be live for others while it's over for this student (not selected, withdrew,
+    declined or accepted the offer): say so, and don't present it as open to them."""
+    label = CLOSED_FOR_YOU.get((app or {}).get("status"))
+    item["closed_for_you"] = bool(label)
+    item["closed_label"] = label
+    if label:
+        item["accepting"] = False
+    return item
 
 
 def drive_out(d: dict) -> dict:
@@ -174,6 +190,7 @@ async def list_drives(user: dict = Depends(active_user)):
             app = mine.get(item["id"])
             item["applied"] = app is not None
             item["application"] = {"id": str(app["_id"]), "status": app["status"]} if app else None
+            mark_closed_for_student(item, app)
             item["rounds"] = [student_round(r) for r in d.get("rounds", [])]
             item["pending_fields"] = sorted(f for f in (p or {}).get("fields", []) if f in STUDENT_FACING_FIELDS)
             if resume_text:
@@ -240,6 +257,13 @@ async def create_drive(body: DriveIn, user: dict = Depends(managers)):
     if user["role"] == "coordinator":
         doc["college_id"] = user["college_id"]
         doc["company_id"] = None
+        if body.company_id:
+            # a company already on Campus Connect: link the drive to its account so it sees it and runs hiring
+            company = await db.companies.find_one({"_id": oid(body.company_id), "status": "approved"}, {"name": 1})
+            if not company or not await db.connections.find_one({"college_id": user["college_id"], "company_id": body.company_id,
+                                                                  "status": "accepted"}):
+                raise HTTPException(400, "Choose a company you're connected with, or type the name of one that isn't on Campus Connect")
+            doc["company_id"], doc["company"] = body.company_id, company["name"].strip()
     else:
         if not doc.get("college_id") or not await db.colleges.find_one({"_id": oid(doc["college_id"]), "status": "approved"}):
             raise HTTPException(400, "Choose the college this drive is for")
@@ -279,10 +303,14 @@ async def create_drive(body: DriveIn, user: dict = Depends(managers)):
     if status == "review":
         n = await notify(await college_staff(doc["college_id"]), "New drive to review",
                          f"{drive_label(doc)} was sent for review.", f"/drives/{did}", "drive")
+    elif user["role"] == "coordinator" and doc.get("company_id"):
+        n = await notify(await drive_company_staff(doc), "Placement cell created a drive for you",
+                         f"{drive_label(doc)}. You'll run hiring once it's published.", f"/drives/{did}", "drive")
     await log_update(entity="drive", entity_id=did, drive_id=did, college_id=doc["college_id"],
                      company_id=doc.get("company_id"), action="created",
                      summary=f"Drive created ({DRIVE_STATUS[status]})", by=user,
-                     notified=f"{n} placement staff" if n else None)
+                     notified=(f"{n} company users" if doc.get("company_id") and user["role"] == "coordinator"
+                               else f"{n} placement staff") if n else None)
     return drive_out(doc)
 
 
@@ -300,7 +328,7 @@ async def drive_detail(drive_id: str, user: dict = Depends(active_user)):
         item["pending_fields"] = sorted({c["field"] for c in pending if c["field"] in STUDENT_FACING_FIELDS})
         app = await db.applications.find_one({"drive_id": drive_id, "student_id": user["id"]}, {"status": 1})
         item["application"] = {"id": str(app["_id"]), "status": app["status"]} if app else None
-        return item
+        return mark_closed_for_student(item, app)
     item = drive_out(drive)
     item["pending_changes"] = [serialize(c) for c in pending]
     item["can"] = {
@@ -768,11 +796,19 @@ async def apply(drive_id: str, user: dict = Depends(require_role("student"))):
         "applied_at": t,
         "history": [{"status": "applied", "at": t, "by": "student"}],
     }
+    # the resume file as submitted (PDF / Word / text), so the company can read it in its own format
+    rf = await db.resume_files.find_one({"student_id": user["id"]})
+    if rf and (resume.get("file") or {}).get("id") == str(rf["_id"]):
+        doc["resume_file"] = {"name": rf["name"], "content_type": rf["content_type"], "size": rf["size"]}
     try:
         res = await db.applications.insert_one(doc)
     except DuplicateKeyError:
         raise HTTPException(409, "You have already applied to this drive")
     doc["_id"] = res.inserted_id
+    if doc.get("resume_file"):
+        await db.application_files.insert_one({"application_id": str(res.inserted_id), "student_id": user["id"],
+                                               "name": rf["name"], "content_type": rf["content_type"], "size": rf["size"],
+                                               "data": rf["data"], "created_at": t})
     who = f"{user['name']} ({(user.get('profile') or {}).get('branch') or 'student'})"
     await notify(await drive_company_staff(drive), f"New application · {drive['role']}", who,
                  f"/drives/{drive_id}/candidates", "application")
@@ -952,6 +988,24 @@ async def apply_cutoff(drive_id: str, body: CutoffIn, user: dict = Depends(manag
                              + (f", {out['below']} not selected" if body.reject_rest and out["below"] else ""), by=user)
     out["applied"] = True
     return out
+
+
+@router.get("/applications/{app_id}/resume")
+async def application_resume(app_id: str, user: dict = Depends(managers)):
+    """The resume exactly as the student submitted it with this application: their PDF or Word file,
+    or (pasted resumes and applications made before files were kept) the submitted text."""
+    app, drive = await _app_and_drive(app_id, user, hiring=False)
+    f = await db.application_files.find_one({"application_id": app_id})
+    if f:
+        safe = re.sub(r'[^A-Za-z0-9._ -]', "_", f["name"])
+        return Response(bytes(f["data"]), media_type=f["content_type"],
+                        headers={"Content-Disposition": f'inline; filename="{safe}"', "X-Resume-Kind": "file",
+                                 "Cache-Control": "no-store"})
+    text = app.get("resume_snapshot")
+    if not text:
+        raise HTTPException(404, "No resume was saved with this application")
+    return Response(text, media_type="text/plain; charset=utf-8",
+                    headers={"X-Resume-Kind": "text", "Cache-Control": "no-store"})
 
 
 # ---- JD -> resume screening workspace -------------------------------------------------

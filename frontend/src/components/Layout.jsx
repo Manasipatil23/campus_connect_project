@@ -95,11 +95,6 @@ const NAV = {
     { to: "/approvals/colleges", label: "College approvals", icon: Landmark },
     { to: "/approvals/companies", label: "Company approvals", icon: Building2 },
   ],
-  // junior-batch students: only interview experiences until their placement season starts
-  junior: [
-    { to: "/experiences", label: "Experiences", icon: MessageSquareQuote },
-    { to: "/profile", label: "Profile", icon: User },
-  ],
 };
 const ROLE_LABEL = { student: "Student", recruiter: "Company", coordinator: "Placement cell", admin: "Admin" };
 
@@ -110,7 +105,7 @@ export default function Layout() {
   const hasOwnItem = (to) => to === "/drives" && pathname === "/drives/new";
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const items = (user.junior ? NAV.junior : NAV[user.role]) || [];
+  const items = NAV[user.role] || [];
 
   const logout = () => { signOut(); navigate("/"); };
 
@@ -129,7 +124,7 @@ export default function Layout() {
       </nav>
       <div className="mt-auto border-t border-black/[.06] px-3 pt-4">
         <div className="truncate text-sm font-medium">{user.name}</div>
-        <div className="truncate text-xs text-ink-muted">{user.college?.short ? `${user.college.short} · ${user.college.city}` : user.company || user.email}</div>
+        <div className="truncate text-xs text-ink-muted">{user.college ? `${user.college.short || user.college.name} · ${user.college.city}` : user.company || user.email}</div>
         <button onClick={logout} className="mt-3 flex items-center gap-2 text-sm text-ink-muted hover:text-ink"><LogOut className="h-4 w-4" /> Sign out</button>
       </div>
     </div>

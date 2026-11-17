@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import bcrypt
 import jwt
 from bson import ObjectId
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .config import JWT_EXPIRE_MINUTES, JWT_SECRET
@@ -48,29 +48,20 @@ def is_allowed_admin(email) -> bool:
     return bool(email) and email.lower() in ADMIN_EMAILS
 
 
-# What a junior-batch student (graduating after this season's batch) may use: reading interview
-# experiences, their own profile and name, notifications and sign-in. Nothing about drives, rounds,
-# results or notices until their own placement season starts.
-JUNIOR_ALLOWED = [("GET", "/api/experiences"), ("PUT", "/api/students/me/profile"), ("PUT", "/api/students/me/name"),
-                  ("ANY", "/api/notifications"), ("GET", "/api/grad-years")]
-
-
-def is_junior(user: dict) -> bool:
+def batch_closed(user: dict) -> bool:
+    """Only this season's graduating batch may use Campus Connect (e.g. the 2027 batch from June 2026
+    to May 2027). Students from any other batch can't sign in."""
     from .schemas import season_batch
     year = (user.get("profile") or {}).get("grad_year")
-    return user.get("role") == "student" and bool(year) and year > season_batch()
+    return user.get("role") == "student" and bool(year) and year != season_batch()
 
 
-def junior_may(method: str, path: str) -> bool:
-    if method == "POST" and path.startswith("/api/experiences/") and path.rsplit("/", 1)[-1] in ("helpful", "report"):
-        return True   # reacting to what they read is fine; posting their own experience isn't
-    for m, prefix in JUNIOR_ALLOWED:
-        if (m == "ANY" or m == method) and (path == prefix or path.startswith(prefix + "/") or path.startswith(prefix + "?")):
-            return True
-    return False
+def batch_closed_message() -> str:
+    from .schemas import season_batch
+    return f"This placement season is for the {season_batch()} graduating batch only, so your account can't sign in."
 
 
-async def active_user(request: Request, user: dict = Depends(current_user)) -> dict:
+async def active_user(user: dict = Depends(current_user)) -> dict:
     """Signed-in users whose account has been approved.
 
     Students are approved by their college's placement cell; coordinators and
@@ -83,10 +74,8 @@ async def active_user(request: Request, user: dict = Depends(current_user)) -> d
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Your placement cell has put your account on hold")
     if user.get("status", "active") != "active":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Your account is awaiting approval")
-    if is_junior(user) and not junior_may(request.method, request.url.path):
-        from .schemas import season_batch
-        raise HTTPException(status.HTTP_403_FORBIDDEN,
-                            f"This season's placements are for the {season_batch()} batch. Until yours starts, you can read interview experiences.")
+    if batch_closed(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, batch_closed_message())
     return user
 
 

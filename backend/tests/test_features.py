@@ -74,6 +74,20 @@ def run():
             tpo, stu = login("tpo@campusconnect.dev", "tpo123"), login("student@campusconnect.dev", "student123")
             college_id = c.get("/api/auth/me", headers=H(tpo)).json()["college_id"]
 
+            # ---- resume preview: the original file is kept and only its owner can open it -------
+            RESUME = ("Demo Student. Skills: Python, SQL, Power BI. Projects: built a sales dashboard that cut "
+                      "reporting time by 40 percent. Internship: data analyst intern at Acme for three months.")
+            r = c.post("/api/students/me/resume", headers=H(stu), files={"file": ("My Resume.pdf", make_pdf(RESUME))})
+            check(r.status_code == 200 and r.json()["file"]["name"] == "My Resume.pdf", "uploaded resume file is kept")
+            f = c.get("/api/students/me/resume/file", headers=H(stu))
+            check(f.status_code == 200 and f.content.startswith(b"%PDF") and f.headers["content-type"] == "application/pdf"
+                  and f.headers["content-disposition"].startswith("inline"), "student previews their own resume PDF")
+            check(c.get("/api/students/me/resume/file", headers=H(tpo)).status_code == 403, "nobody else can open it here")
+            c.post("/api/students/me/resume/text", headers=H(stu), json={"text": RESUME})
+            check(c.get("/api/students/me/resume/file", headers=H(stu)).status_code == 404
+                  and db.resume_files.count_documents({"student_id": str(stu_doc["_id"])}) == 0,
+                  "pasted text replaces the old file (no stale preview)")
+
             # ---- JD upload -------------------------------------------------------------
             up = lambda name, data: c.post("/api/drives/jd-file", headers=H(tpo), files={"file": (name, data)})
             r = up("jd.docx", make_docx(JD))
@@ -123,23 +137,33 @@ def run():
             check(c.get(f"/api/drives/{wrong['id']}", headers=H(stu)).json()["eligible"], "after the placement cell confirms, the student is eligible")
             db.change_requests.delete_many({"drive_id": wrong["id"]})
 
-            # ---- junior batch: only interview experiences --------------------------------------
-            db.users.update_one({"email": "student@campusconnect.dev"}, {"$set": {"profile.grad_year": SEASON + 1}})
-            me = c.get("/api/auth/me", headers=H(stu)).json()
-            check(me["junior"] is True and me["season_batch"] == SEASON, f"a {SEASON + 1} student is marked junior")
-            blocked = [p for p in ("/api/drives", "/api/students/me/dashboard", "/api/students/me/analytics", "/api/announcements",
-                                   "/api/issues", f"/api/drives/{d['id']}") if c.get(p, headers=H(stu)).status_code != 403]
-            check(not blocked, f"junior can't see drives, results, insights or notices {blocked or ''}")
-            check(c.get("/api/experiences", headers=H(stu)).status_code == 200 and c.get("/api/experiences/companies", headers=H(stu)).status_code == 200,
-                  "junior can read interview experiences")
-            check(c.post("/api/experiences", headers=H(stu), json={"company": "X", "role": "Y", "round_type": "Other", "difficulty": 3,
-                                                                    "outcome": "awaiting"}).status_code == 403, "junior can't post experiences")
-            check(c.put("/api/students/me/name", headers=H(stu), json={"first_name": "Demo", "last_name": "Student"}).status_code == 200,
-                  "junior can still manage their own profile")
-            r = c.post("/api/announcements", headers=H(tpo), json={"title": "Season notice test", "body": "Only for this season.", "audience": "all"}).json()
-            check(str(stu_doc["_id"]) not in (db.announcements.find_one({"_id": ObjectId(r["id"])}) or {}).get("recipient_ids", []),
-                  "notices to all students skip the junior batch")
-            db.announcements.delete_one({"_id": ObjectId(r["id"])})
+            # ---- a placement-cell drive for a connected company is linked to that company -----------
+            rec_company = c.get("/api/auth/me", headers=H(rec)).json()["company_id"]
+            body = {"company": "typed name is ignored", "company_id": rec_company, "role": "Linked Drive Analyst", "description": JD,
+                    "ctc_lpa": 7, "required_skills": ["sql"]}
+            linked = c.post("/api/drives", headers=H(tpo), json=body).json()
+            drive_ids.append(linked["id"])
+            check(linked["company_id"] == rec_company and linked["company"] == "Nimbus Analytics" and linked["status"] == "approved",
+                  "college drive for a connected company is linked to its account")
+            check(any(x["id"] == linked["id"] for x in c.get("/api/drives", headers=H(rec)).json()), "the company sees the drive the college created")
+            check(c.get(f"/api/drives/{linked['id']}", headers=H(rec)).json()["can"]["hire"], "the company runs hiring on it")
+            check(not c.get(f"/api/drives/{linked['id']}", headers=H(tpo)).json()["can"]["hire"], "the placement cell doesn't")
+            check(c.post(f"/api/drives/{linked['id']}/publish", headers=H(rec)).status_code == 403, "the company still can't publish it")
+            check(c.post("/api/drives", headers=H(tpo), json={**body, "company_id": str(ObjectId())}).status_code == 400,
+                  "can't link a company you aren't connected with")
+            own = c.post("/api/drives", headers=H(tpo), json={**body, "company": "Offline Co", "company_id": None}).json()
+            drive_ids.append(own["id"])
+            check(own["company_id"] is None and c.get(f"/api/drives/{own['id']}", headers=H(tpo)).json()["can"]["hire"],
+                  "a company not on Campus Connect: the placement cell runs hiring")
+
+            # ---- only this season's batch can sign in -------------------------------------------
+            for other in (SEASON + 1, SEASON - 1):
+                db.users.update_one({"email": "student@campusconnect.dev"}, {"$set": {"profile.grad_year": other}})
+                check(c.post("/api/auth/login", json={"email": "student@campusconnect.dev", "password": "student123"}).status_code == 403,
+                      f"a {other} student can't sign in")
+                blocked = [p for p in ("/api/auth/me", "/api/drives", "/api/students/me/dashboard", "/api/experiences")
+                           if c.get(p, headers=H(stu)).status_code != 403]
+                check(not blocked, f"an existing {other} sign-in is shut out {blocked or ''}")
             db.users.update_one({"email": "student@campusconnect.dev"}, {"$set": {"profile.grad_year": SEASON}})
             check(c.get("/api/drives", headers=H(stu)).status_code == 200, f"a {SEASON} student sees drives again")
 
@@ -196,8 +220,10 @@ def run():
         db.approvals.delete_many({"target_id": {"$in": ids}})
         db.notifications.delete_many({"user_id": {"$in": ids}})
         db.users.delete_many({"_id": {"$in": temp_students}})
+        db.resume_files.delete_many({"student_id": str(stu_doc["_id"])})
         db.users.update_one({"email": "student@campusconnect.dev"}, {
-            "$set": {"name": stu_doc["name"], "first_name": stu_doc.get("first_name"), "last_name": stu_doc.get("last_name"), "status": "active"},
+            "$set": {"name": stu_doc["name"], "first_name": stu_doc.get("first_name"), "last_name": stu_doc.get("last_name"), "status": "active",
+                     "resume": stu_doc.get("resume"), "profile.skills": (stu_doc.get("profile") or {}).get("skills", [])},
             "$unset": {"name_change": "", "name_history": "", "suspended_at": "", "review_note": ""}})
         fixtures.reset(db, since)
         db.notifications.delete_many({"created_at": {"$gte": since}})

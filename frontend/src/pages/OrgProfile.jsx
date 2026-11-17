@@ -69,7 +69,7 @@ export default function OrgProfile() {
     const o = data.org;
     setOrg(data.kind === "company"
       ? { website: o.website || "", industry: o.industry || "", size: o.size || "201-1000", hq_city: o.hq_city || "", about: o.about || "", careers_email: o.careers_email || "" }
-      : { website: o.website || "", address: o.address || "", city: o.city || "", state: o.state || "", pincode: o.pincode || "", phone: o.phone || "", about: o.about || "", placement_email: o.placement_email || "" });
+      : { short: o.short || "", website: o.website || "", address: o.address || "", city: o.city || "", state: o.state || "", pincode: o.pincode || "", phone: o.phone || "", about: o.about || "", placement_email: o.placement_email || "" });
   }, [data]);
 
   if (error) return <ErrorNote>{error}</ErrorNote>;
@@ -91,7 +91,8 @@ export default function OrgProfile() {
   };
 
   const OrgIcon = isCompany ? Building2 : Landmark;
-  const short = (o.short || o.name).slice(0, 3).toUpperCase();
+  // a college's short name is shown exactly as the college set it, never cut or guessed
+  const short = isCompany ? o.name.slice(0, 3).toUpperCase() : o.short || o.name.slice(0, 1);
 
   return (
     <>
@@ -102,7 +103,7 @@ export default function OrgProfile() {
           <div className="card overflow-hidden">
             <div className="h-20 bg-gradient-to-br from-brand-200 via-brand-100 to-white" />
             <div className="-mt-10 px-6 pb-6">
-              <span className="flex h-20 w-20 items-center justify-center rounded-2xl border-4 border-white bg-brand-800 text-xl font-medium text-white">{short}</span>
+              <span className={`flex h-20 min-w-20 w-fit max-w-full items-center justify-center rounded-2xl border-4 border-white bg-brand-800 px-3 font-medium text-white ${short.length > 6 ? "text-base" : "text-xl"}`}>{short}</span>
               <h1 className="mt-3 flex items-center gap-1.5 text-xl font-medium tracking-tight">{o.name}<BadgeCheck className="h-5 w-5 text-brand-600" /></h1>
               <p className="text-sm text-ink-muted">{isCompany ? `${o.industry || ""} · ${o.hq_city || ""}` : `${o.city}, ${o.state}`}</p>
               {!isCompany && o.tier && <span className="chip mt-3 bg-brand-50 text-brand-700">Tier {o.tier}</span>}
@@ -155,6 +156,7 @@ export default function OrgProfile() {
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Short name"><input className="input" value={org.short} onChange={setO("short")} required maxLength={20} placeholder="e.g. KJSSE" /></Field>
                 <Field label="Website"><input className="input" value={org.website} onChange={setO("website")} required /></Field>
                 <Field label="Office phone"><input className="input" value={org.phone} onChange={setO("phone")} required /></Field>
                 <Field label="Address" wide><input className="input" value={org.address} onChange={setO("address")} required /></Field>

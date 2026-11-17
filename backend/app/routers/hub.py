@@ -106,7 +106,7 @@ async def pending_actions(user: dict = Depends(active_user)):
 
 # ---- announcements -------------------------------------------------------------------
 async def _audience(body: AnnouncementIn, user: dict):
-    # notices go to this season's batch; the junior batch only sees interview experiences
+    # notices go to this season's batch (the only batch that can sign in)
     season = {"$or": [{"profile.grad_year": {"$lte": season_batch()}}, {"profile.grad_year": None}]}
     if body.audience == "all":
         return [str(s["_id"]) async for s in db.users.find({"role": "student", "status": "active", **season,

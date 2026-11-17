@@ -103,16 +103,14 @@ def season_batch(today: Optional[date] = None) -> int:
 
 
 def open_batches(today: Optional[date] = None) -> List[int]:
-    """Graduation years that may sign up: this season's batch and the one just junior to it."""
-    s = season_batch(today)
-    return [s, s + 1]
+    """Graduation years that may sign up and sign in: only this season's batch."""
+    return [season_batch(today)]
 
 
 def batch_error(year: int) -> Optional[str]:
-    allowed = open_batches()
-    if year in allowed:
+    if year in open_batches():
         return None
-    return f"Sign-ups are open to the {allowed[0]} and {allowed[1]} graduating batches only"
+    return f"Campus Connect is open to the {season_batch()} graduating batch only this placement season"
 
 
 class ProfileIn(BaseModel):
@@ -187,6 +185,7 @@ class DriveIn(BaseModel):
     criteria: Criteria = Criteria()
     deadline: Optional[str] = None
     college_id: Optional[str] = None  # recruiters pick a college; coordinators use their own
+    company_id: Optional[str] = None  # coordinators: a connected company on Campus Connect (it then runs hiring)
     assessment_sections: List[str] = DEFAULT_SECTIONS
     rounds: List[RoundIn] = []
     criteria_confirmed: bool = False  # recruiter reviewed the skills extracted from the JD
@@ -282,6 +281,8 @@ class ResumeTextIn(BaseModel):
 
 # ---- onboarding -------------------------------------------------------------
 PHONE = r"^(\+91[\s-]?)?[6-9]\d{9}$"
+# a college's short name exactly as the college writes it (KJSSE, VJTI, IIT-B, K.J. Somaiya…): never generated
+SHORT_NAME = r"^[A-Za-z0-9.&()' -]*[A-Za-z0-9][A-Za-z0-9.&()' -]*$"   # 2-20 chars, at least one letter or digit
 NAAC_GRADES = Literal["A++", "A+", "A", "B++", "B+", "B", "C", "Not accredited"]
 
 
@@ -308,6 +309,7 @@ class StudentSignupIn(BaseModel):
 class CollegeSignupIn(BaseModel):
     # institution
     name: str = Field(min_length=5, max_length=150)
+    short: str = Field(min_length=2, max_length=20, pattern=SHORT_NAME, description="The college's own short name, e.g. KJSSE")
     aishe_code: str = Field(pattern=r"^[CUS]-\d{3,6}$", description="AISHE code, e.g. C-41234")
     institution_type: Literal["Government", "Government-aided", "Private", "Autonomous", "Deemed university"]
     affiliated_university: str = Field(min_length=3, max_length=150)

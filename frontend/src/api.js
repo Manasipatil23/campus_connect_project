@@ -1,4 +1,4 @@
-const TOKEN_KEY = "cc_token";
+export const TOKEN_KEY = "cc_token";
 
 export const getToken = () => {
   try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }

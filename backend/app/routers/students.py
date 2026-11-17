@@ -1,9 +1,10 @@
 import json
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
-from bson import ObjectId
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from bson import Binary, ObjectId
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 
 from ..auth import require_role
@@ -14,16 +15,16 @@ from ..ml.health import health_score
 from ..ml.insights import (assessment_insights, compare_with_selected, headline, reached, resume_insights,
                            rule_suggestions_resume)
 from ..ml.llm import explain_decision, personalised_suggestions, review_resume
-from ..documents import extract_text
+from ..documents import TYPES, extension, extract_text
 from ..schemas import batch_error, FUNNEL, ROUND_LABELS, STAGE_LABELS, TERMINAL, NameIn, OfferResponseIn, ProfileIn, ResumeTextIn
 from ..workflow import ACCEPTING, STUDENT_VISIBLE, college_staff, drive_company_staff, drive_label, log_update, notify, now
-from .drives import get_drive, oid, screening_view, student_round
+from .drives import CLOSED_FOR_YOU, get_drive, oid, screening_view, student_round
 
 router = APIRouter(prefix="/api/students", tags=["students"])
 student_only = require_role("student")
 
 
-async def _save_resume(user: dict, text: str, filename: str) -> dict:
+async def _save_resume(user: dict, text: str, filename: str, data: Optional[bytes] = None) -> dict:
     ats = score_resume(text)
     review = await run_in_threadpool(review_resume, text, ats)
     resume = {
@@ -32,7 +33,15 @@ async def _save_resume(user: dict, text: str, filename: str) -> dict:
         "ats": ats,
         "review": review,
         "updated_at": datetime.now(timezone.utc),
+        "file": None,
     }
+    # keep the original file (one per student, replaced on each upload) so the student can preview it
+    await db.resume_files.delete_many({"student_id": user["id"]})
+    if data is not None:
+        name = filename.rsplit("/", 1)[-1][:120]
+        res = await db.resume_files.insert_one({"student_id": user["id"], "name": name, "content_type": TYPES[extension(name)],
+                                                "size": len(data), "data": Binary(data), "created_at": resume["updated_at"]})
+        resume["file"] = {"id": str(res.inserted_id), "name": name, "size": len(data), "content_type": TYPES[extension(name)]}
     update = {"resume": resume}
     # merge skills detected in the resume into the profile
     skills = sorted(set(user.get("profile", {}).get("skills", [])) | set(extract_skills(text)))
@@ -88,10 +97,22 @@ async def change_name(body: NameIn, user: dict = Depends(student_only)):
 
 @router.post("/me/resume")
 async def upload_resume(file: UploadFile = File(...), user: dict = Depends(student_only)):
-    text = extract_text(file.filename or "", await file.read(), "resume")
+    data = await file.read()
+    text = extract_text(file.filename or "", data, "resume")
     if len(text) < 50:
         raise HTTPException(400, "No readable text found. If it's a scanned image, upload a text PDF or Word file.")
-    return await _save_resume(user, text, file.filename or "resume")
+    return await _save_resume(user, text, file.filename or "resume", data)
+
+
+@router.get("/me/resume/file")
+async def resume_file(user: dict = Depends(student_only)):
+    """The student's own uploaded resume, shown inline so the browser can preview it."""
+    doc = await db.resume_files.find_one({"student_id": user["id"]})
+    if not doc:
+        raise HTTPException(404, "The original file isn't saved for this resume. Upload it again to preview it.")
+    safe = re.sub(r'[^A-Za-z0-9._ -]', "_", doc["name"])
+    return Response(bytes(doc["data"]), media_type=doc["content_type"],
+                    headers={"Content-Disposition": f'inline; filename="{safe}"', "Cache-Control": "no-store"})
 
 
 @router.post("/me/resume/text")
@@ -133,9 +154,10 @@ async def drive_fit(user: dict = Depends(student_only)):
         open_now = d.get("status") in ACCEPTING and not (d.get("deadline") and d["deadline"] < today)
         eligible, reasons = check_eligibility(user, d)
         app = apps.get(did)
+        closed_label = CLOSED_FOR_YOU.get((app or {}).get("status"))   # live for others, over for this student
         rows.append({
             "drive_id": did, "company": d["company"], "role": d["role"], "ctc_lpa": d.get("ctc_lpa"),
-            "deadline": d.get("deadline"), "open": open_now,
+            "deadline": d.get("deadline"), "open": open_now and not closed_label, "closed_label": closed_label,
             "skill_fit": ats["skill_coverage"] if ats else None, "match": ats["score"] if ats else None,
             "matched_skills": ats["matched_skills"] if ats else [], "missing_skills": ats["missing_skills"] if ats else [],
             "fits": bool(ats and ats["skill_coverage"] >= FIT_THRESHOLD),

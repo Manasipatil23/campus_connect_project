@@ -1,10 +1,25 @@
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, ClipboardPaste, UploadCloud } from "lucide-react";
+import { ArrowRight, ClipboardPaste, Eye, UploadCloud } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { AtsBreakdown, Review } from "../components/AtsBreakdown";
-import { Badge, ErrorNote, PageHeader, Spinner, Tabs, fmtDate, useApi } from "../components/ui";
+import ResumeViewer from "../components/ResumeViewer";
+import { Badge, ErrorNote, Modal, PageHeader, Spinner, Tabs, fmtDate, useApi } from "../components/ui";
+
+/** Shows the uploaded resume in the format it was uploaded in (PDF or Word), as companies will see it. */
+function ResumePreview({ resume, open, onClose }) {
+  const viewable = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"].includes(resume.file?.content_type);
+  return (
+    <Modal open={open} onClose={onClose} title={`Preview · ${resume.filename}`} wide>
+      {open && (viewable ? <ResumeViewer key={resume.file.id} path="/students/me/resume/file" fallbackName={resume.file.name} /> : (
+        <div className="rounded-xl bg-black/[.03] p-6 text-center text-sm text-ink-muted">
+          Upload your resume as a PDF or Word file to preview it here, exactly as companies will see it.
+        </div>
+      ))}
+    </Modal>
+  );
+}
 
 function Tile({ value, label, hint, tone = "text-ink" }) {
   return (
@@ -53,7 +68,7 @@ function DriveFit() {
               <li key={r.drive_id} className="grid gap-3 py-4 sm:grid-cols-[1.4fr_1fr_auto] sm:items-center">
                 <div className="min-w-0">
                   <Link to={`/drives/${r.drive_id}`} className="font-medium hover:text-brand-700">{r.role}</Link>
-                  <div className="text-xs text-ink-muted">{r.company} · {r.ctc_lpa} LPA · {r.open ? "open" : "closed"}</div>
+                  <div className="text-xs text-ink-muted">{r.company} · {r.ctc_lpa} LPA · {r.closed_label ? r.closed_label.toLowerCase() : r.open ? "open" : "closed"}</div>
                   {r.missing_skills.length > 0 && (
                     <div className="mt-1.5 flex flex-wrap gap-1">{r.missing_skills.map((m) => <span key={m} className="chip bg-rose-50 text-rose-600">{m}</span>)}</div>
                   )}
@@ -81,6 +96,7 @@ export default function Resume() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [preview, setPreview] = useState(false);
   const fileRef = useRef();
 
   const run = async (req) => {
@@ -123,8 +139,8 @@ export default function Resume() {
               className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-black/10 p-8 text-center hover:border-brand-500 hover:bg-brand-50/40">
               <UploadCloud className="h-8 w-8 text-brand-500" />
               <div className="mt-2 text-sm font-medium">Drop your resume or click to browse</div>
-              <div className="text-xs text-ink-muted">PDF or .txt, up to 5 MB</div>
-              <input ref={fileRef} type="file" accept=".pdf,.txt,.md" className="hidden" onChange={(e) => upload(e.target.files[0])} />
+              <div className="text-xs text-ink-muted">PDF or Word (.docx), up to 5 MB</div>
+              <input ref={fileRef} type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden" onChange={(e) => upload(e.target.files[0])} />
             </div>
           ) : (
             <div className="space-y-3">
@@ -137,8 +153,9 @@ export default function Resume() {
           )}
           <div className="mt-4"><ErrorNote>{error}</ErrorNote></div>
           {resume && (
-            <div className="mt-4 text-xs text-ink-muted">
-              Current: <span className="font-medium text-ink-soft">{resume.filename}</span> · {resume.ats.word_count} words
+            <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-ink-muted">
+              <span className="min-w-0">Current: <span className="font-medium text-ink-soft [overflow-wrap:anywhere]">{resume.filename}</span> · {resume.ats.word_count} words</span>
+              <button className="btn-soft ml-auto px-3 py-1.5 text-xs" onClick={() => setPreview(true)}><Eye className="h-3.5 w-3.5" /> Preview</button>
             </div>
           )}
         </div>
@@ -155,6 +172,8 @@ export default function Resume() {
         </div>
       </div>
       {resume && <div className="mt-6"><DriveFit key={resume.updated_at} /></div>}
+      {/* outside the cards: their blur would trap a fixed-position window inside them */}
+      {resume && <ResumePreview key={resume.updated_at} resume={resume} open={preview} onClose={() => setPreview(false)} />}
     </>
   );
 }
